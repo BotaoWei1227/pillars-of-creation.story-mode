@@ -42,12 +42,45 @@ body {
 .hdr-gear { display: inline-block; color: var(--copper); animation: spin 9s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .hdr-sub { font-family: 'Cinzel', serif; color: var(--ink-dim); letter-spacing: 2px; font-size: 10.5px; margin-top: 5px; }
-.settings-fab {
-  position: absolute; right: 0; top: 2px; width: 36px; height: 36px; border-radius: 50%;
-  background: var(--bg-panel); border: 1px solid var(--line); color: var(--brass-light);
-  font-size: 17px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+.hdr-actions {
+  position: absolute; right: 0; top: 2px; display: flex; gap: 8px;
 }
-.settings-fab:hover { border-color: var(--brass); }
+.icon-fab {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--bg-panel); border: 1px solid var(--line); color: var(--brass-light);
+  font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.icon-fab:hover { border-color: var(--brass); }
+
+.dice-badge {
+  align-self: flex-end;
+  font-family: 'Cinzel', serif; font-size: 10.5px; color: var(--magic-glow);
+  background: var(--bg-panel-2); border: 1px solid var(--magic); border-radius: 10px;
+  padding: 2px 9px; margin-top: 3px; margin-right: 2px; letter-spacing: 0.5px;
+}
+
+.craft-banner {
+  font-family: 'Cinzel', serif; font-size: 12px; text-align: center;
+  padding: 10px; border-radius: 5px; letter-spacing: 0.5px;
+}
+.craft-banner.success { color: var(--success); background: rgba(127,174,122,0.1); border: 1px solid #2e3f24; }
+.craft-banner.fail { color: var(--danger); background: rgba(194,92,66,0.1); border: 1px solid #3a2416; }
+
+.google-profile { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.google-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line); }
+.google-avatar.placeholder {
+  display: flex; align-items: center; justify-content: center; background: var(--bg-deep); font-size: 18px;
+}
+.google-info { min-width: 0; }
+.google-name { font-size: 13.5px; font-weight: 700; color: var(--brass-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.google-email { font-size: 11px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.novel-textarea {
+  width: 100%; min-height: 320px; background: var(--bg-deep); border: 1px solid var(--line);
+  color: var(--ink); padding: 12px; border-radius: 4px; font-family: 'Noto Serif TC', serif;
+  font-size: 13.5px; line-height: 1.9; resize: vertical; outline: none;
+}
+.novel-textarea:focus { border-color: var(--brass); }
 
 .card {
   max-width: 520px; margin: 0 auto;

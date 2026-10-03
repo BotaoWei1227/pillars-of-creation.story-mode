@@ -6,42 +6,16 @@ const SYSTEM_PROMPT = `
 《無限煉製 故事模式》的荒誕喜劇×黑色歷史風格文字冒險遊戲。基調是「亂世背景下的
 溫暖荒誕」：外面是血腥的戰爭，村子裡是離譜的歡樂，偶爾在關鍵時刻讓人感動。
 
-【版本更新說明－請務必先檢查】
-如果玩家在第一則訊息中貼上了舊版存檔（例如一段state JSON，或提到「延續進度」、
-「這是我之前的存檔」、「我玩到第X章」之類），代表他是從舊版本（V1.0／V1.1）
-回來的玩家。這種情況下，你必須：
-1. 先用幾句話簡短告知現在是 V1.2 版本，更新重點如下（列點說明，不用全部列完，
-   挑跟玩家進度相關的講就好）：
-   - 世界觀由原本4章擴充為10章，原本的結局〈泉水之殤〉現在是故事中段
-     （第四章），後面還有第五章到第十章可以玩。
-   - 新增第五章〈流光拾遺〉：窺探Funtuan的過去。
-   - 新增第六章〈眾志重光〉：全村協力升級泉水。
-   - 新增第七章〈將軍歸來〉：金將軍帶著更強大的軍武捲土重來。
-   - 新增第八章〈昏睡紅茶〉：全村昏睡，需潛入夢境治療大家。
-   - 新增第九章〈雪山孤征〉：跋涉前往尼泊爾山頭的將軍總部。
-   - 新增第十章〈終焉一擊〉：與金將軍的最終決戰，結局依玩家選擇分支。
-   - （V1.2.1）存檔區塊現在會清楚標示「這是存檔，不是劇情」，並且就算
-     玩家貼的存檔不完整或格式跑掉，你也要能接得住。
-2. 完全保留玩家提供的原始數值（章節、HP、屬性、五元素、造物、好感度、
-   伴侶、狀態效果等），不得重新分配屬性、不得重置任何進度、不得要求
-   玩家重新做屬性分配。
-3. 直接從玩家原本停留的章節或最近一次合理的劇情點接續下去，已經完成的
-   章節不必重演，用一小段「前情提要」帶過即可。
-4. 玩家貼上的存檔資料，格式可能是一段完整或不完整的JSON、也可能是他
-   自己複製走樣、少了幾個欄位、或把code fence符號弄壞的文字。你都要
-   盡量從裡面讀出能用的資訊（章節、HP、屬性、好感度……有多少讀多少），
-   缺漏的欄位就用開局的預設值合理補上（例如缺HP就用體力×5、缺好感度
-   就當作沒有任何NPC好感度紀錄），絕對不要因為存檔格式不完美就拒絕
-   玩家、要求他重新開局，或當作沒看到直接無視他的進度。
-如果玩家是全新開局（沒有提供任何舊存檔資訊），則忽略以上版本說明，直接
-照後面的【遊戲開場流程】正常開始新遊戲。
+【本版本說明】
+這個版本是嵌在網頁遊戲介面裡運作的，玩家的章節、HP、屬性、背包、好感度、
+伴侶、狀態效果等進度，前端會自動幫忙存檔、讀檔、同步，你完全不用處理
+「玩家貼了舊存檔」、「要不要繼續進度」這類事情，每一局開始時玩家都是
+真的要開新角色。
 
 【回覆格式－務必嚴格遵守】
 每次回覆分成兩部分：
 1) 劇情文字：正常小說敘述、對話（純文字，繁體中文，不夾雜任何markdown code fence）。
-2) 系統狀態：在回覆最後，先用一行純文字寫上
-   「📎 以下是存檔資料，不是劇情內容，可整段複製起來，下次要繼續進度時
-   貼在新對話最前面即可」，接著輸出「唯一一個」用 \`\`\`state 開頭、\`\`\`
+2) 系統狀態：在回覆最後，輸出「唯一一個」用 \`\`\`state 開頭、\`\`\`
    結尾的 JSON code fence，內容是目前完整遊戲狀態，欄位需完整、每回合都
    要重新輸出整份（不是差異），格式如下：
 \`\`\`state
@@ -104,14 +78,24 @@ const SYSTEM_PROMPT = `
 （鍊金學識/洞察/煉製判定）、魅力CHA（談判/社交/說服）、體力CON
 （不參與判定，只決定HP，公式：最大HP = 體力 × 5）。
 每次有風險的行動，用該屬性判定：
-成功門檻 = floor(屬性點數 × 20 ÷ 30)，擲一顆d20（1~20隨機），
-骰出數字 ≤ 門檻 即成功，> 門檻 即失敗（要有合理後果）。
+成功門檻 = floor(屬性點數 × 20 ÷ 30)。
 對照：10→門檻6(30%)｜12→門檻8(40%)｜15→門檻10(50%)｜18→門檻12(60%)｜
 20→門檻13(65%)｜24→門檻16(80%)｜27→門檻18(90%)｜30→門檻20(100%)。
-絕對不可暗改機率讓玩家必定成功或必定失敗，要老實回報骰值、門檻、結果，
-並確實寫入 lastRoll。極簡單無風險行動不需要骰。敵人基礎攻擊力約15~25，
-第七章起金將軍陣營的攻擊力大幅提升（約30~45），需要提醒玩家這是全新
-難度層級，鼓勵先升級裝備／泉水再挑戰。
+
+【重要】骰子不是由你決定的，而是遊戲前端在玩家送出每一則訊息前，就已經
+用真正公正的亂數擲好了。玩家的訊息後面，有時候會自動帶一行類似
+「（本回合由遊戲端擲出的公正d20骰值：14。這是這一回合唯一允許使用的
+骰值……）」的附註，那個數字就是這一回合唯一合法的d20結果：
+- 如果這個行動需要屬性判定，直接拿那個數字跟對應屬性的門檻比較，
+  骰出數字 ≤ 門檻即成功，> 門檻即失敗，誠實依結果描寫後果，並把這個
+  數字原封不動填進 lastRoll.roll。絕對不可以自己另外虛構一個骰值，
+  也不可以暗改這個數字讓玩家必定成功或必定失敗。
+- 如果這個行動明顯不需要判定（純對話、單純移動、極簡單無風險的動作），
+  就不用理會這個數字，lastRoll 填 null，正常敘述即可。
+- 如果玩家的訊息沒有帶這行附註（例如最開頭的開局設定訊息），就當作
+  這回合不需要擲骰處理。
+敵人基礎攻擊力約15~25，第七章起金將軍陣營的攻擊力大幅提升（約30~45），
+需要提醒玩家這是全新難度層級，鼓勵先升級裝備／泉水再挑戰。
 
 【無限煉製系統（核心玩法）】
 主角一開場由Funtuan贈送火、土、水、風、雷五大元素，各3個，存放在背包。
@@ -155,10 +139,9 @@ const SYSTEM_PROMPT = `
 之後填入companion欄位。
 
 【固定操作指令】
-玩家輸入「A」＝查看背包（劇情文字簡述一下即可，實際明細由前端從state
-的elements/items顯示）。
-玩家輸入「B」＝查看伴侶（尚未邂逅則說明尚未邂逅任何羈絆對象）。
-玩家輸入「C 造物甲 + 造物乙」＝煉製，依上述系統處理。
+玩家的背包、羈絆資訊都由前端介面直接顯示，不需要你額外說明怎麼查看。
+玩家輸入「C 造物甲 + 造物乙」＝煉製，依上述系統處理（這是唯一需要你
+解析的固定指令，前端的煉製台按鈕會自動幫玩家組出這個格式）。
 
 【村莊地理】
 阿爾卑斯山中，中央是爐火廣場（合成核心，爐火由Gentle Larry調控蒸氣設備）；
@@ -245,18 +228,14 @@ Gentle Larry調校蒸氣系統、萬象與夜夜貢獻妖力、白文鳥找傳�
 說服他放下野心等），不用單一固定結局。
 
 【遊戲開場流程】
-第一則回覆時：先確認玩家是否貼有舊存檔（見前面【版本更新說明】），
-若無，才依下列流程開始新遊戲。先用一小段話簡述世界觀重點，接著說明
-五大屬性、體力/HP公式、各流派玩法建議（蠻力流/敏捷流/煉製智力流/魅力流/
-生存輔助流），並說明A/B/C指令用途。玩家會告訴你主角名字與10點自由分配
-結果（每項起始10，上限30），確認後正式開始第一章〈樂土初啟〉：在阿爾
-卑斯山雪線邊，Funtuan親自迎接主角，送上火土水風雷五大元素（location
-應為entrance）。別忘了在回覆最後附上「存檔標示行＋完整的state JSON」。
-骰子系統、受傷/死亡規則、好感度系統、煉製系統從此刻起都要嚴格執行。
-此外，在玩家分配完屬性、正式進入第一章之前，先用一句話提醒玩家：
-「之後每則回覆最後都會附一段存檔資料，想繼續進度時把那一整段複製貼上
-到新對話最前面即可，不用理會裡面的JSON內容。」讓玩家從一開始就知道
-這段資訊是做什麼用的，避免誤會。
+第一則回覆時：先用一小段話簡述世界觀重點，接著說明五大屬性、體力/HP
+公式、各流派玩法建議（蠻力流/敏捷流/煉製智力流/魅力流/生存輔助流）。
+不需要解釋A/B/C操作指令或背包／羈絆怎麼查看，前端介面會直接處理，
+你只要專心把故事說好。玩家會告訴你主角名字與10點自由分配結果（每項
+起始10，上限30），確認後正式開始第一章〈樂土初啟〉：在阿爾卑斯山雪線
+邊，Funtuan親自迎接主角，送上火土水風雷五大元素（location應為
+entrance）。別忘了在回覆最後附上完整的state JSON。骰子系統、受傷/死亡
+規則、好感度系統、煉製系統從此刻起都要嚴格執行。
 `;
 
 const DEFAULT_MODEL = "gemini-3.5-flash-lite";
@@ -325,33 +304,23 @@ function persistSave() {
       messages: S.messages, gameState: S.gameState,
     }));
   } catch (e) {}
-  if (S.cloudCode) syncCloudNow(false);
+  if (S.cloudUser) syncCloudNow(false);
 }
 
 function cloudPayload() {
   return {
-    version: "1.2.1",
+    version: "1.2.2",
     stage: S.stage, heroName: S.heroName, points: S.points,
     messages: S.messages, gameState: S.gameState,
   };
 }
 
-function generateSaveCode() {
-  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // 去掉容易看錯的 0/O/1/I/L
-  const group = () => {
-    let s = "";
-    for (let i = 0; i < 4; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
-    return s;
-  };
-  return `${group()}-${group()}-${group()}`;
-}
-
 async function syncCloudNow(showUi) {
-  if (!S.cloudCode || !window.CloudSave) return;
+  if (!S.cloudUser || !window.CloudSave) return;
   try {
     S.cloudBusy = true;
     if (showUi) render();
-    await window.CloudSave.save(S.cloudCode, cloudPayload());
+    await window.CloudSave.save(cloudPayload());
     S.cloudMsg = { type: "ok", text: `已同步到雲端（${new Date().toLocaleTimeString("zh-TW")}）` };
   } catch (e) {
     S.cloudMsg = { type: "bad", text: "雲端同步失敗：" + (e.message || e) };
@@ -361,67 +330,166 @@ async function syncCloudNow(showUi) {
   }
 }
 
-async function createCloudSave() {
-  if (!window.CloudSave || !window.CloudSave.isConfigured()) {
+async function signInGoogle() {
+  if (!window.CloudAuth || !window.CloudSave || !window.CloudSave.isConfigured()) {
     S.cloudMsg = { type: "bad", text: "尚未設定 Firebase，請先依照 firebase-config.js 裡的教學設定好。" };
     render();
     return;
   }
-  const code = generateSaveCode();
   S.cloudBusy = true;
   render();
   try {
-    await window.CloudSave.save(code, cloudPayload());
-    S.cloudCode = code;
-    localStorage.setItem("ic_cloud_code", code);
-    S.cloudMsg = { type: "ok", text: "雲端存檔已建立！記得複製代碼保存起來。" };
+    await window.CloudAuth.signIn();
+    // actual state update happens via the cloud-auth-changed listener
   } catch (e) {
-    S.cloudMsg = { type: "bad", text: "建立失敗：" + (e.message || e) };
-  } finally {
+    S.cloudMsg = { type: "bad", text: "登入失敗：" + (e.message || e) };
     S.cloudBusy = false;
     render();
   }
 }
 
-function stopCloudSync() {
-  if (!confirm("確定要停止雲端同步嗎？（只會移除這台裝置上的代碼記憶，雲端上的存檔資料不會被刪除）")) return;
-  S.cloudCode = "";
-  localStorage.removeItem("ic_cloud_code");
-  S.cloudMsg = null;
-  render();
+async function signOutGoogle() {
+  if (!window.CloudAuth) return;
+  if (!confirm("確定要登出嗎？登出後這台裝置就不會再自動同步雲端存檔，但雲端上的資料不會被刪除。")) return;
+  try { await window.CloudAuth.signOut(); } catch (e) {}
 }
 
-async function loadCloudSave(codeRaw) {
-  const code = (codeRaw || "").trim().toUpperCase();
-  if (!code) return;
-  if (!window.CloudSave || !window.CloudSave.isConfigured()) {
-    S.cloudMsg = { type: "bad", text: "尚未設定 Firebase，請先依照 firebase-config.js 裡的教學設定好。" };
-    render();
-    return;
-  }
-  if (!confirm("讀取雲端進度會覆蓋你目前的本機進度，確定要繼續嗎？")) return;
-  S.cloudBusy = true;
+// Called whenever Firebase reports a sign-in-state change (see the
+// cloud-auth-changed listener set up near init, below).
+async function handleCloudUserChanged(user) {
+  S.cloudUser = user;
+  S.cloudBusy = false;
+  if (!user) { S.cloudMsg = null; render(); return; }
   render();
   try {
-    const data = await window.CloudSave.load(code);
-    S.stage = data.stage || "playing";
-    S.heroName = data.heroName || S.heroName;
-    S.points = data.points || S.points;
-    S.messages = Array.isArray(data.messages) ? data.messages : [];
-    S.gameState = { ...DEFAULT_STATE, ...(data.gameState || {}) };
-    S.cloudCode = code;
-    localStorage.setItem("ic_cloud_code", code);
-    S.tab = "story";
+    const data = await window.CloudSave.load();
+    if (data && (data.messages || []).length) {
+      const useCloud = confirm(
+        `偵測到你的 Google 帳號（${user.displayName || user.email || "已登入"}）已經有雲端進度，要讀取雲端進度嗎？\n按「取消」會改用你目前這台裝置上的進度覆蓋雲端。`
+      );
+      if (useCloud) {
+        S.stage = data.stage || "playing";
+        S.heroName = data.heroName || S.heroName;
+        S.points = data.points || S.points;
+        S.messages = Array.isArray(data.messages) ? data.messages : [];
+        S.gameState = { ...DEFAULT_STATE, ...(data.gameState || {}) };
+        S.tab = "story";
+        S.cloudMsg = { type: "ok", text: "已讀取雲端進度！" };
+      } else {
+        await syncCloudNow(false);
+        S.cloudMsg = { type: "ok", text: "已用本機進度覆蓋雲端存檔。" };
+      }
+    } else if (S.messages.length) {
+      await syncCloudNow(false);
+      S.cloudMsg = { type: "ok", text: "已將本機進度上傳到雲端。" };
+    }
+  } catch (e) {
+    S.cloudMsg = { type: "bad", text: "雲端讀取失敗：" + (e.message || e) };
+  } finally {
     persistSave();
-    S.cloudMsg = { type: "ok", text: "已從雲端讀取進度！" };
-  } catch (e) {
-    const msg = e.code === "NOT_FOUND" ? "找不到這組代碼，請確認輸入是否正確。" : ("讀取失敗：" + (e.message || e));
-    S.cloudMsg = { type: "bad", text: msg };
-  } finally {
-    S.cloudBusy = false;
     render();
   }
 }
+
+// ---------- short-story generation ----------
+async function generateNovel() {
+  if (!getApiKey()) {
+    S.novelError = "請先設定 Gemini API 金鑰。";
+    render();
+    return;
+  }
+  if (!S.messages.length) {
+    S.novelError = "目前還沒有任何遊戲紀錄可以改寫。";
+    render();
+    return;
+  }
+  S.novelBusy = true;
+  S.novelError = null;
+  render();
+  try {
+    const transcript = S.messages
+      .map((m) => (m.role === "user" ? `【玩家】${m.display || m.content}` : `【敘事】${m.content}`))
+      .join("\n\n");
+    const prompt = `以下是一款文字冒險遊戲《無限煉製 故事模式》的對話紀錄與目前狀態，請你擔任小說家，把這整段遊玩過程改寫成一篇完整的中文短篇小說。要求：使用小說筆法、白描、情感收斂；不要用條列式、不要有遊戲UI用語（像是HP、骰子、門檻這類字眼都不要出現）；不需要前言、分析或結語，直接寫故事本體；長度約1000～2000字。\n\n【對話紀錄】\n${transcript}\n\n【目前狀態（僅供參考角色現況，不要直接寫進小說裡）】\n${JSON.stringify(S.gameState)}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(getModel())}:generateContent?key=${encodeURIComponent(getApiKey())}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 4096 },
+      }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) throw new Error((data && data.error && data.error.message) || `HTTP ${res.status}`);
+    if (data.error) throw new Error(data.error.message || "API 錯誤");
+    const cand = data.candidates && data.candidates[0];
+    const parts = (cand && cand.content && cand.content.parts) || [];
+    const text = parts.map((p) => p.text || "").join("\n").trim();
+    S.novelText = text || "（沒有產生內容，請再試一次）";
+  } catch (e) {
+    S.novelError = "生成失敗：" + (e.message || e);
+  } finally {
+    S.novelBusy = false;
+    render();
+  }
+}
+
+function renderNovelModal() {
+  return `
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal" id="modalBox">
+      <div class="modal-head"><span>📖 短篇小說</span><button class="modal-close" id="modalCloseBtn">✕</button></div>
+      <div class="modal-hint">
+        AI 會讀取你目前的遊戲紀錄與狀態，改寫成一篇短篇小說。內容較長，生成需要
+        一點時間，也會消耗你自己 Gemini API 金鑰的額度。
+      </div>
+      <div class="modal-section">
+        <button class="btn primary" id="genNovelBtn" ${S.novelBusy ? "disabled" : ""}>
+          ${S.novelBusy ? "生成中…請稍候" : "✨ 依照目前存檔生成短篇小說"}
+        </button>
+      </div>
+      ${S.novelError ? `<div class="key-status bad">${esc(S.novelError)}</div>` : ""}
+      ${S.novelText ? `
+        <div class="modal-section">
+          <div class="modal-section-title">生成結果</div>
+          <textarea id="novelOutput" class="novel-textarea" readonly>${esc(S.novelText)}</textarea>
+          <div class="save-actions" style="margin-top:8px">
+            <button class="btn ghost small" id="copyNovelBtn">📋 複製</button>
+            <button class="btn ghost small" id="downloadNovelBtn">⬇️ 下載 .txt</button>
+          </div>
+        </div>` : ""}
+    </div>
+  </div>`;
+}
+
+function downloadNovel() {
+  if (!S.novelText) return;
+  const blob = new Blob([S.novelText], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const safeName = (S.heroName || "短篇小說").replace(/[^\w\u4e00-\u9fff-]/g, "");
+  a.href = url;
+  a.download = `無限煉製_${safeName}_短篇小說.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ---------- fullscreen ----------
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen?.().catch(() => {});
+  } else {
+    document.exitFullscreen?.();
+  }
+}
+document.addEventListener("fullscreenchange", () => {
+  const btn = document.getElementById("fullscreenFab");
+  if (btn) btn.textContent = document.fullscreenElement ? "🗗" : "⛶";
+});
+
 function getApiKey() { return localStorage.getItem(LS_KEY) || ""; }
 function setApiKey(k) { localStorage.setItem(LS_KEY, k.trim()); }
 function getModel() { return localStorage.getItem(LS_MODEL) || DEFAULT_MODEL; }
@@ -468,9 +536,11 @@ function importSaveFromFile(file) {
 }
 
 function clearSave() {
-  if (!confirm("確定要清除所有進度嗎？此動作無法復原。（雲端上的存檔資料不會被刪除，只是這台裝置會忘記代碼）")) return;
+  const warn = S.cloudUser
+    ? "確定要清除所有進度嗎？此動作無法復原。你目前已用 Google 帳號登入，之後的新進度會自動覆蓋雲端上原本的存檔。"
+    : "確定要清除所有進度嗎？此動作無法復原。";
+  if (!confirm(warn)) return;
   localStorage.removeItem(LS_SAVE);
-  localStorage.removeItem("ic_cloud_code");
   S.stage = "intro";
   S.heroName = "艾利亞";
   S.points = { str: 10, agi: 10, int: 10, cha: 10, con: 10 };
@@ -478,7 +548,6 @@ function clearSave() {
   S.messages = [];
   S.gameState = { ...DEFAULT_STATE };
   S.tab = "story";
-  S.cloudCode = "";
   S.cloudMsg = null;
   closeModal();
   render();
@@ -522,15 +591,68 @@ function extractText(raw) {
   return raw && raw.trim() ? raw : "（沒有收到回應，請重新嘗試）";
 }
 
+// The model should label its state block ```state, but LLMs don't always
+// follow fence labels exactly (some emit ```json, or drop the label). To
+// avoid silently losing HP/stat updates when that happens, we fall back to
+// scanning every fenced block in the reply and picking the one that parses
+// as JSON and looks like our game-state shape.
+function looksLikeGameState(obj) {
+  return obj && typeof obj === "object" && !Array.isArray(obj) &&
+    ("hp" in obj || "chapter" in obj || "stats" in obj || "elements" in obj);
+}
+
+function findStateFence(raw) {
+  const labeled = raw.match(/```state\s*([\s\S]*?)```/);
+  if (labeled) {
+    try {
+      const obj = JSON.parse(labeled[1].trim());
+      return { match: labeled, obj };
+    } catch (e) { /* fall through to generic scan */ }
+  }
+  const fenceRe = /```[a-zA-Z0-9_-]*\s*([\s\S]*?)```/g;
+  let m;
+  let found = null;
+  while ((m = fenceRe.exec(raw)) !== null) {
+    try {
+      const obj = JSON.parse(m[1].trim());
+      if (looksLikeGameState(obj)) found = { match: m, obj };
+    } catch (e) { /* not JSON, skip */ }
+  }
+  return found;
+}
+
+function coerceState(obj) {
+  if (!obj) return null;
+  const st = { ...obj };
+  if (st.hp != null) st.hp = Number(st.hp);
+  if (st.maxHp != null) st.maxHp = Number(st.maxHp);
+  if (st.stats) {
+    const s = {};
+    for (const k of ["str", "agi", "int", "cha", "con"]) {
+      if (st.stats[k] != null) s[k] = Number(st.stats[k]);
+    }
+    st.stats = { ...DEFAULT_STATE.stats, ...s };
+  }
+  if (st.elements) {
+    const e = {};
+    for (const k of ["fire", "earth", "water", "wind", "thunder"]) {
+      if (st.elements[k] != null) e[k] = Number(st.elements[k]);
+    }
+    st.elements = { ...DEFAULT_STATE.elements, ...e };
+  }
+  return st;
+}
+
 function parseReply(raw) {
-  const match = raw.match(/```state\s*([\s\S]*?)```/);
-  if (!match) return { narrative: raw.trim(), state: null };
-  let state = null;
-  try { state = JSON.parse(match[1].trim()); } catch (e) { state = null; }
-  const narrative = (raw.slice(0, match.index) + raw.slice(match.index + match[0].length))
+  const found = findStateFence(raw);
+  if (!found) return { narrative: raw.trim(), state: null };
+  const { match } = found;
+  const fullMatchText = match[0];
+  const idx = match.index;
+  const narrative = (raw.slice(0, idx) + raw.slice(idx + fullMatchText.length))
     .replace(/📎[^\n]*存檔資料[^\n]*\n?/g, "")
     .trim();
-  return { narrative, state };
+  return { narrative, state: coerceState(found.obj) };
 }
 
 function itemEmoji(it) { return it && it.emoji ? it.emoji : "📦"; }
@@ -552,16 +674,19 @@ const S = {
   loading: false,
   error: null,
   tab: "story", // story | craft | status | map
-  modal: null, // null | "settings"
+  modal: null, // null | "settings" | "novel"
   craftSlotA: null,
   craftSlotB: null,
   craftQuery: "",
   craftSorted: false,
   craftFavs: {},
-  cloudCode: localStorage.getItem("ic_cloud_code") || "",
+  craftResult: null, // null | "success" | "fail"
+  cloudUser: null, // { uid, displayName, email, photoURL } | null
   cloudBusy: false,
   cloudMsg: null, // { type: "ok" | "bad", text }
-  cloudLoadInput: "",
+  novelText: null,
+  novelBusy: false,
+  novelError: null,
 };
 
 (function initFromSave() {
@@ -588,10 +713,32 @@ function adjustPoint(key, delta) {
   render();
 }
 
+// Dice are rolled here in the browser with Math.random(), not by the model —
+// LLMs are not reliable fair random-number generators. The rolled value is
+// appended to the outgoing message as an instruction the model must use
+// verbatim for this turn's check (see system prompt).
+function rollD20() { return Math.floor(Math.random() * 20) + 1; }
+
+function withDiceAnnotation(text, dice) {
+  return `${text}\n\n（本回合由遊戲端擲出的公正d20骰值：${dice}。這是這一回合唯一允許使用的骰值：如果這個行動需要屬性判定，直接拿這個數字跟對應門檻比較判定成功或失敗，不要自己另外虛構骰值；如果這個行動明顯不需要判定，忽略這個數字即可。）`;
+}
+
 function applyReply(rawText, historyBeforeReply) {
   const { narrative, state } = parseReply(rawText);
   if (state) S.gameState = { ...S.gameState, ...state };
-  S.messages = [...historyBeforeReply, { role: "assistant", content: narrative || rawText }];
+  const text = narrative || rawText;
+  S.messages = [...historyBeforeReply, { role: "assistant", content: text, display: text }];
+
+  // Surface a clear craft-result banner (success / 崩解) based on whether the
+  // turn that triggered this reply was a crafting attempt.
+  const lastUser = historyBeforeReply[historyBeforeReply.length - 1];
+  if (lastUser && lastUser.role === "user" && /^C\s/.test((lastUser.display || lastUser.content || "").trim())) {
+    if (state && state.lastRoll) S.craftResult = state.lastRoll.success ? "success" : "fail";
+    else S.craftResult = null;
+  } else {
+    S.craftResult = null;
+  }
+
   persistSave();
 }
 
@@ -606,8 +753,8 @@ async function beginGame() {
   S.loading = true;
   S.error = null;
   S.gameState = { ...DEFAULT_STATE, stats: { ...S.points }, maxHp: S.points.con * 5, hp: S.points.con * 5 };
-  const setupMsg = `我要開始遊戲。主角名字：${S.heroName}。屬性分配：蠻力${S.points.str}、敏捷${S.points.agi}、智力${S.points.int}、魅力${S.points.cha}、體力${S.points.con}（HP上限${S.points.con * 5}）。請先簡述世界觀重點、屬性與流派玩法、A/B/C指令說明，然後開始第一章〈樂土初啟〉的開場，由Funtuan迎接我，並在回覆最後附上存檔標示行與完整的state JSON。`;
-  const initMessages = [{ role: "user", content: setupMsg }];
+  const setupText = `我要開始遊戲。主角名字：${S.heroName}。屬性分配：蠻力${S.points.str}、敏捷${S.points.agi}、智力${S.points.int}、魅力${S.points.cha}、體力${S.points.con}（HP上限${S.points.con * 5}）。請先簡述世界觀重點、屬性與流派玩法，然後開始第一章〈樂土初啟〉的開場，由Funtuan迎接我，並在回覆最後附上完整的state JSON。`;
+  const initMessages = [{ role: "user", content: setupText, display: setupText }];
   S.messages = initMessages;
   render();
   try {
@@ -640,7 +787,8 @@ async function send(rawText) {
     return;
   }
   S.tab = "story";
-  const next = [...S.messages, { role: "user", content: text }];
+  const dice = rollD20();
+  const next = [...S.messages, { role: "user", content: withDiceAnnotation(text, dice), display: text, dice }];
   S.messages = next;
   S.input = "";
   S.loading = true;
@@ -774,9 +922,11 @@ function renderRollToast() {
 function renderStory() {
   const msgs = S.messages.map((m) => {
     if (m.role === "user") {
-      return `<div class="msg user"><p class="user-line">${esc(m.content)}</p></div>`;
+      const txt = m.display != null ? m.display : m.content;
+      const badge = m.dice ? `<div class="dice-badge" title="遊戲端擲出的公正骰值">🎲 ${m.dice}</div>` : "";
+      return `<div class="msg user"><p class="user-line">${esc(txt)}</p>${badge}</div>`;
     }
-    return `<div class="msg ai">${renderSegments(m.content)}</div>`;
+    return `<div class="msg ai">${renderSegments(m.display != null ? m.display : m.content)}</div>`;
   }).join("");
   return `
   <div class="tab-story">
@@ -786,8 +936,8 @@ function renderStory() {
       ${S.error ? `<div class="errmsg">${esc(S.error)}</div>` : ""}
     </div>
     <div class="quickbar">
-      <button class="qbtn" data-act="quick" data-cmd="A" ${S.loading ? "disabled" : ""}>查看背包</button>
-      <button class="qbtn" data-act="quick" data-cmd="B" ${S.loading ? "disabled" : ""}>查看羈絆</button>
+      <button class="qbtn" data-act="goto" data-tab="craft">🎒 背包／煉製</button>
+      <button class="qbtn" data-act="goto" data-tab="status">💞 羈絆／狀態</button>
     </div>
     <div class="inputbar">
       <input id="storyInput" placeholder="輸入你的行動……" value="${esc(S.input)}" ${S.loading ? "disabled" : ""} />
@@ -827,8 +977,10 @@ function renderCraft() {
   if (S.craftSorted) list = [...list].sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
   list = [...list.filter((m) => S.craftFavs[m.id]), ...list.filter((m) => !S.craftFavs[m.id])];
 
-  const manaMax = 25;
-  const manaCur = Math.min(manaMax, Object.values(S.gameState.elements || {}).reduce((a, b) => a + b, 0));
+  const resultBanner = S.craftResult
+    ? `<div class="craft-banner ${S.craftResult}">
+        ${S.craftResult === "success" ? "✨ 煉製成功！新造物已加入背包" : "💥 煉製崩解！材料已全數損毀"}
+       </div>` : "";
 
   const pills = list.map((m) => {
     const picked = (S.craftSlotA && S.craftSlotA.id === m.id) || (S.craftSlotB && S.craftSlotB.id === m.id);
@@ -859,12 +1011,8 @@ function renderCraft() {
       <input class="tbsearch" id="craftSearch" placeholder="🔍 搜尋全櫃造物..." value="${esc(S.craftQuery)}" />
     </div>
     <div class="craft-grid">${pills}</div>
+    ${resultBanner}
     <div class="craft-footer">
-      <div class="mana-row">
-        <span class="mana-label">✨ 元素能量</span>
-        <div class="mana-track"><div class="mana-fill" style="width:${(manaCur / manaMax) * 100}%"></div></div>
-        <span class="mana-val">${manaCur}/${manaMax}</span>
-      </div>
       <div class="craft-actions">
         <button class="btn ghost" id="prayBtn" ${S.loading ? "disabled" : ""}>🙏 祈禱</button>
         <button class="btn primary" id="extractBtn" ${S.loading || !S.craftSlotA || !S.craftSlotB ? "disabled" : ""}>⚗️ 萃取</button>
@@ -932,6 +1080,7 @@ function renderMap() {
 // ---------- settings modal ----------
 function renderModal() {
   const root = document.getElementById("modalRoot");
+  if (S.modal === "novel") { root.innerHTML = renderNovelModal(); return; }
   if (S.modal !== "settings") { root.innerHTML = ""; return; }
   const key = getApiKey();
   const masked = key ? key.slice(0, 4) + "••••••••" + key.slice(-4) : "";
@@ -997,34 +1146,39 @@ function renderCloudSection() {
   if (!configured) {
     return `
     <div class="modal-section">
-      <div class="modal-section-title">☁️ 雲端存檔（跨裝置代碼）</div>
+      <div class="modal-section-title">☁️ 雲端存檔（Google 帳號）</div>
       <div class="modal-hint">
-        這個功能需要你自己接上一個免費的 Firebase 專案才能使用。打開專案裡的
-        <code>firebase-config.js</code> 檔案，照裡面的教學步驟設定好、存檔後重新整理
-        這個網頁，這裡就會變成可以用了。沒接的話完全不影響遊戲，只是沒辦法
-        用代碼跨裝置同步，改用上面的「匯出／匯入存檔」搬資料即可。
+        這個功能需要你自己接上一個免費的 Firebase 專案、並開啟 Google 登入方式
+        才能使用。打開專案裡的 <code>firebase-config.js</code> 檔案，照裡面的
+        教學步驟設定好、存檔後重新整理這個網頁，這裡就會變成可以用了。沒接的話
+        完全不影響遊戲，只是沒辦法跨裝置自動同步，改用上面的「匯出／匯入存檔」
+        搬資料即可。
       </div>
       ${msg}
     </div>`;
   }
 
-  if (S.cloudCode) {
+  if (S.cloudUser) {
+    const u = S.cloudUser;
     return `
     <div class="modal-section">
-      <div class="modal-section-title">☁️ 雲端存檔（跨裝置代碼）</div>
-      <div class="field-row">
-        <input id="cloudCodeDisplay" readonly value="${esc(S.cloudCode)}" />
-        <button class="linkbtn" id="copyCodeBtn">📋 複製</button>
+      <div class="modal-section-title">☁️ 雲端存檔（Google 帳號）</div>
+      <div class="google-profile">
+        ${u.photoURL ? `<img class="google-avatar" src="${esc(u.photoURL)}" alt="" />` : `<div class="google-avatar placeholder">👤</div>`}
+        <div class="google-info">
+          <div class="google-name">${esc(u.displayName || "已登入")}</div>
+          <div class="google-email">${esc(u.email || "")}</div>
+        </div>
       </div>
       <div class="modal-hint">
-        在別的裝置開啟同一個網站、設定裡貼上這組代碼讀取，就能接續同一份進度。
-        每次劇情推進都會自動同步到雲端，也可以手動按下面按鈕立刻同步一次。
+        已登入，每次劇情推進都會自動同步到雲端。在別的裝置用同一個 Google
+        帳號登入，就能接續同一份進度。
       </div>
       <div class="save-actions" style="margin-top:10px">
         <button class="btn ghost small" id="cloudSyncBtn" ${S.cloudBusy ? "disabled" : ""}>
           ${S.cloudBusy ? "同步中…" : "🔄 立即同步"}
         </button>
-        <button class="btn danger small" id="cloudStopBtn">✖️ 停止雲端同步</button>
+        <button class="btn danger small" id="cloudSignOutBtn">登出</button>
       </div>
       ${msg}
     </div>`;
@@ -1032,19 +1186,13 @@ function renderCloudSection() {
 
   return `
   <div class="modal-section">
-    <div class="modal-section-title">☁️ 雲端存檔（跨裝置代碼）</div>
-    <div class="modal-hint">尚未建立雲端存檔。按下面按鈕會把目前進度上傳，並產生一組代碼。</div>
+    <div class="modal-section-title">☁️ 雲端存檔（Google 帳號）</div>
+    <div class="modal-hint">用 Google 帳號登入後，進度會自動同步到雲端；在別的裝置用同一個帳號登入就能接續進度。</div>
     <div class="save-actions" style="margin-top:8px">
-      <button class="btn ghost small" id="cloudCreateBtn" ${S.cloudBusy ? "disabled" : ""}>
-        ${S.cloudBusy ? "建立中…" : "➕ 建立新雲端存檔"}
+      <button class="btn primary small" id="googleSignInBtn" ${S.cloudBusy ? "disabled" : ""}>
+        ${S.cloudBusy ? "登入中…" : "🔑 使用 Google 帳號登入"}
       </button>
     </div>
-    <div class="modal-section-title" style="margin-top:16px">用代碼讀取進度</div>
-    <div class="field-row">
-      <input id="cloudLoadInput" placeholder="例如 AB3K-7Q2M-9XZP" value="${esc(S.cloudLoadInput)}" />
-      <button class="linkbtn" id="cloudLoadBtn" ${S.cloudBusy ? "disabled" : ""}>⬇️ 讀取</button>
-    </div>
-    <div class="modal-hint">在別的裝置建立過雲端存檔的話，把那組代碼貼在這裡就能接續進度。</div>
     ${msg}
   </div>`;
 }
@@ -1079,8 +1227,8 @@ function bindEvents() {
   }
   const sendBtn = document.getElementById("sendBtn");
   if (sendBtn) sendBtn.onclick = () => send();
-  document.querySelectorAll('[data-act="quick"]').forEach((btn) => {
-    btn.onclick = () => send(btn.dataset.cmd);
+  document.querySelectorAll('[data-act="goto"]').forEach((btn) => {
+    btn.onclick = () => { S.tab = btn.dataset.tab; render(); };
   });
   const log = document.querySelector(".log");
   if (log) log.scrollTop = log.scrollHeight;
@@ -1118,9 +1266,13 @@ function bindEvents() {
   const extractBtn = document.getElementById("extractBtn");
   if (extractBtn) extractBtn.onclick = () => doExtract();
 
-  // settings fab
+  // header icon buttons
   const settingsFab = document.getElementById("settingsFab");
   if (settingsFab) settingsFab.onclick = () => { S.modal = "settings"; render(); };
+  const novelFab = document.getElementById("novelFab");
+  if (novelFab) novelFab.onclick = () => { S.modal = "novel"; render(); };
+  const fullscreenFab = document.getElementById("fullscreenFab");
+  if (fullscreenFab) fullscreenFab.onclick = () => toggleFullscreen();
 
   bindModalEvents();
 }
@@ -1167,34 +1319,37 @@ function bindModalEvents() {
   const clearSaveBtn = document.getElementById("clearSaveBtn");
   if (clearSaveBtn) clearSaveBtn.onclick = () => clearSave();
 
-  // cloud save
-  const copyCodeBtn = document.getElementById("copyCodeBtn");
-  if (copyCodeBtn) {
-    copyCodeBtn.onclick = () => {
-      navigator.clipboard?.writeText(S.cloudCode).then(() => {
-        S.cloudMsg = { type: "ok", text: "代碼已複製！" };
-        render();
+  // cloud save (Google sign-in)
+  const googleSignInBtn = document.getElementById("googleSignInBtn");
+  if (googleSignInBtn) googleSignInBtn.onclick = () => signInGoogle();
+  const cloudSyncBtn = document.getElementById("cloudSyncBtn");
+  if (cloudSyncBtn) cloudSyncBtn.onclick = () => syncCloudNow(true);
+  const cloudSignOutBtn = document.getElementById("cloudSignOutBtn");
+  if (cloudSignOutBtn) cloudSignOutBtn.onclick = () => signOutGoogle();
+
+  // novel modal
+  const genNovelBtn = document.getElementById("genNovelBtn");
+  if (genNovelBtn) genNovelBtn.onclick = () => generateNovel();
+  const copyNovelBtn = document.getElementById("copyNovelBtn");
+  if (copyNovelBtn) {
+    copyNovelBtn.onclick = () => {
+      navigator.clipboard?.writeText(S.novelText || "").then(() => {
+        S.novelError = null;
+        alert("已複製到剪貼簿！");
       }).catch(() => {
-        const inp = document.getElementById("cloudCodeDisplay");
-        if (inp) { inp.select(); document.execCommand("copy"); }
+        const ta = document.getElementById("novelOutput");
+        if (ta) { ta.select(); document.execCommand("copy"); }
       });
     };
   }
-  const cloudSyncBtn = document.getElementById("cloudSyncBtn");
-  if (cloudSyncBtn) cloudSyncBtn.onclick = () => syncCloudNow(true);
-  const cloudStopBtn = document.getElementById("cloudStopBtn");
-  if (cloudStopBtn) cloudStopBtn.onclick = () => stopCloudSync();
-  const cloudCreateBtn = document.getElementById("cloudCreateBtn");
-  if (cloudCreateBtn) cloudCreateBtn.onclick = () => createCloudSave();
-  const cloudLoadInput = document.getElementById("cloudLoadInput");
-  if (cloudLoadInput) {
-    cloudLoadInput.oninput = (e) => { S.cloudLoadInput = e.target.value; };
-    cloudLoadInput.focus();
-    cloudLoadInput.setSelectionRange(cloudLoadInput.value.length, cloudLoadInput.value.length);
-  }
-  const cloudLoadBtn = document.getElementById("cloudLoadBtn");
-  if (cloudLoadBtn) cloudLoadBtn.onclick = () => loadCloudSave(S.cloudLoadInput);
+  const downloadNovelBtn = document.getElementById("downloadNovelBtn");
+  if (downloadNovelBtn) downloadNovelBtn.onclick = () => downloadNovel();
 }
+
+// ---------- cloud auth listener ----------
+window.addEventListener("cloud-auth-changed", (e) => {
+  handleCloudUserChanged(e.detail);
+});
 
 // ---------- init ----------
 render();
