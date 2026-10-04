@@ -29,7 +29,7 @@ const SYSTEM_PROMPT = `
   "companion": null,
   "effects": [],
   "lastRoll": null,
-  "suggestions": ["環顧四周", "向Funtuan打聲招呼", "前往爐火廣場"],
+  "suggestions": ["<這裡填根據這一回合劇情現場想出的建議1>", "<方向要跟建議1不同的建議2>", "<方向要跟前兩個都不同的建議3>"],
   "craftOutcome": null,
   "inventoryChange": {
     "itemsGained": [],
@@ -55,6 +55,13 @@ const SYSTEM_PROMPT = `
   環境、一個跟NPC互動），不要每次都是戰鬥選項。永遠剛好給3個，角色死亡
   結局或遊戲明確結束時可以給空陣列[]。這只是給玩家方便點選的建議，
   玩家仍然可以自己輸入任何內容，不受這3個選項限制。
+  【絕對不可以重複】這3個建議必須每一回合重新想過，要根據你「這一回合
+  剛寫完的劇情文字」當場生成，具體到這一刻的場景、剛出現的NPC、剛發生
+  的事件。嚴禁下列行為：(1) 原封不動沿用上一回合給過的建議文字；
+  (2) 抄schema範例裡的佔位文字；(3) 給空泛到每一章都能套用的建議
+  （例如「繼續探索」「跟村民聊天」這種沒有具體對象或地點的廢話）。
+  如果你發現自己正要寫出跟上一輪一模一樣的句子，代表你沒有真的根據
+  當下劇情去想，請重新想三個具體、有畫面、跟這段文字直接相關的建議。
 
 【重要：背包／元素的回報方式，禁止回傳完整清單】
 這個版本不再要你每回合回報完整的 items/elements 清單——完整清單改由
@@ -627,7 +634,14 @@ function callGemini(history) {
     body: JSON.stringify({
       contents,
       systemInstruction: { role: "system", parts: [{ text: SYSTEM_PROMPT }] },
-      generationConfig: { maxOutputTokens: 2048 },
+      // Narrative (400~800 Chinese characters) plus the trailing state JSON
+      // (favorability/effects/suggestions/inventoryChange) can add up to
+      // more than 2048 tokens. If the reply gets cut off mid-JSON, the
+      // ```state fence never closes, parsing fails for that turn, and the
+      // UI silently keeps showing the previous turn's data (HP, items,
+      // suggestions, etc.) unchanged — which looks exactly like "stuck" or
+      // "repeating" values. Generous headroom avoids that failure mode.
+      generationConfig: { maxOutputTokens: 3500 },
     }),
   }).then(async (r) => {
     const data = await r.json().catch(() => null);
