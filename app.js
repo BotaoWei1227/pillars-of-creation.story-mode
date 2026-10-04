@@ -982,13 +982,23 @@ function render() {
 // Keep the player's own last message pinned near the top of the log (like a
 // chat app), instead of jumping to the very bottom of a long AI reply —
 // otherwise the player has to scroll back up to read the reply from the top.
+//
+// Note: this deliberately uses getBoundingClientRect() rather than
+// .offsetTop. .offsetTop is measured relative to the nearest *positioned*
+// ancestor, which here is <body> (not .log) — so comparing it against
+// log.scrollTop directly is wrong and effectively dumps the view near the
+// bottom. getBoundingClientRect() is always viewport-relative regardless of
+// the positioning chain, so the delta between the two rects is reliable.
 function scrollLogToLastUser() {
   const log = document.querySelector(".log");
   if (!log) return;
   const userMsgs = log.querySelectorAll(".msg.user");
   const last = userMsgs[userMsgs.length - 1];
-  if (last) log.scrollTop = Math.max(0, last.offsetTop - 6);
-  else log.scrollTop = log.scrollHeight;
+  if (!last) { log.scrollTop = log.scrollHeight; return; }
+  const logRect = log.getBoundingClientRect();
+  const lastRect = last.getBoundingClientRect();
+  const delta = lastRect.top - logRect.top;
+  log.scrollTop = Math.max(0, log.scrollTop + delta - 6);
 }
 
 function renderIntro() {
