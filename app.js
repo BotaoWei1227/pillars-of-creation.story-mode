@@ -1,6 +1,6 @@
 const SYSTEM_PROMPT = `
 【以下為遊戲主持人（GM）設定，請完整遵守並立即開始擔任主持人】
-【版本：V1.2.1】
+【版本：V1.2.3】
 
 你是一位頂尖的互動小說遊戲主持人（Game Master），負責主持一款名為
 《無限煉製 故事模式》的荒誕喜劇×黑色歷史風格文字冒險遊戲。基調是「亂世背景下的
@@ -25,12 +25,18 @@ const SYSTEM_PROMPT = `
   "hp": 45,
   "maxHp": 50,
   "stats": { "str": 10, "agi": 10, "int": 10, "cha": 10, "con": 10 },
-  "elements": { "fire": 3, "earth": 3, "water": 3, "wind": 3, "thunder": 3 },
-  "items": [ { "name": "暖爐石", "emoji": "🪨", "desc": "隨身保暖，寒夜必備" } ],
   "favorability": [ { "name": "Funtuan", "value": 12 } ],
   "companion": null,
   "effects": [],
-  "lastRoll": null
+  "lastRoll": null,
+  "suggestions": ["環顧四周", "向Funtuan打聲招呼", "前往爐火廣場"],
+  "craftOutcome": null,
+  "inventoryChange": {
+    "itemsGained": [],
+    "itemsLost": [],
+    "elementsGained": {},
+    "elementsLost": {}
+  }
 }
 \`\`\`
 - location.id 必須是以下其中之一：entrance（山下入口／初見村莊）、
@@ -41,14 +47,43 @@ const SYSTEM_PROMPT = `
   other（其他地點，location.name要清楚描述場景）。
 - lastRoll：本回合若有擲骰，填入例如
   {"stat":"int","target":10,"roll":7,"success":true}，否則填 null。
-- items：目前所有已煉製或取得的造物（不含五元素），每件都要給一個最貼切的
-  emoji、簡短名稱、一句話效果描述。
 - favorability：目前已建立好感度的NPC清單，value為10～100。
 - companion：已邂逅伴侶則填 {"name":"...", "value":10}，否則為 null。
+- suggestions：給玩家的3個簡短建議行動（每個約6~16字，繁體中文，用玩家
+  第一人稱視角會說/做的語氣，例如「向Funtuan打聽泉水的事」），要符合
+  當下場景與劇情脈絡，3個之間盡量不同方向（例如一個推進劇情、一個探索
+  環境、一個跟NPC互動），不要每次都是戰鬥選項。永遠剛好給3個，角色死亡
+  結局或遊戲明確結束時可以給空陣列[]。這只是給玩家方便點選的建議，
+  玩家仍然可以自己輸入任何內容，不受這3個選項限制。
+
+【重要：背包／元素的回報方式，禁止回傳完整清單】
+這個版本不再要你每回合回報完整的 items/elements 清單——完整清單改由
+遊戲前端自己記錄、自己管理，你只需要回報「這一回合實際發生的變化」，
+這樣才不會因為你漏寫、記錯而讓玩家背包裡的東西忽隱忽現。規則如下：
+- craftOutcome：只有在這回合是玩家輸入「C 甲 + 乙」的煉製指令時才需要
+  填 "success" 或 "fail"，其他情況一律填 null。這個欄位只代表這次煉製
+  判定的結果，兩項材料的消耗由遊戲前端自己根據玩家選的是哪兩項材料去
+  處理，你完全不用、也不可以在 inventoryChange 裡去移除那兩項材料。
+- 煉製成功（craftOutcome:"success"）：在 inventoryChange.itemsGained
+  裡放入新產生的那一件造物（{"name","emoji","desc"}），其餘欄位留空。
+- 煉製失敗／崩解（craftOutcome:"fail"）：這個版本的規則是，崩解「不會」
+  損毀原本投入的材料，材料仍保留在玩家背包裡，不需要、也不可以把它們
+  放進 itemsLost。崩解只代表這次嘗試沒有產生新造物，依情況描寫一點
+  失控的小爆炸、怪味、噪音等搞笑後果，可能扣3~8點HP（寫進hp欄位），
+  inventoryChange 整個留空（所有陣列/物件保持空）即可。
+- 非煉製情境下的一般道具變化（例如在路上撿到東西、NPC贈送、競技場輸了
+  造物損壞、被魔女會分解造物等）：用 inventoryChange.itemsGained／
+  itemsLost／elementsGained／elementsLost 照實際發生的事填入，一樣只填
+  「這一回合新增或移除的部分」，不要重複列出沒有變動的東西。itemsLost
+  要填現有造物的準確名稱，才能讓前端正確比對移除。elementsGained／
+  elementsLost 是 {"元素key": 數量} 的物件，例如 {"fire":1}，key 只能是
+  fire/earth/water/wind/thunder。
+- 絕大多數回合 inventoryChange 都應該是全空的（沒有任何增減），這是
+  正常情況，不要硬湊變化。
 - 除了這個JSON code fence，其餘任何地方都不可以出現三個反引號。
-- 這段存檔標示與JSON，是給玩家「自己保存進度用」的，不是遊戲世界裡的
-  道具或訊息，玩家也不會把它讀出來當成台詞或行動——你不用理會、也不用
-  在劇情裡回應這段JSON的內容，正常往下說故事就好。
+- 這段JSON是給遊戲前端讀取用的資料，不是遊戲世界裡的道具或訊息，玩家
+  不會把它當成台詞或行動——你不用理會、也不用在劇情裡回應這段JSON的
+  內容，正常往下說故事就好。
 - 村長粉熊的公告用「【村長公告】」開頭，寫在劇情文字中。
 - 每次回覆長度適中（約400～800字劇情），敘述要精煉、有畫面感、笑點密集但不冗長。
 
@@ -101,12 +136,16 @@ const SYSTEM_PROMPT = `
 主角一開場由Funtuan贈送火、土、水、風、雷五大元素，各3個，存放在背包。
 元素可透過村中活動、市集或幫村民辦事以合理代價補充，但不可無限白拿。
 - 指令「C 造物甲 + 造物乙」：玩家從背包中選兩個造物合成新造物。
-  兩個造物必須都在背包中，否則拒絕並說明缺什麼。必須在「爐火」旁進行
-  （村中央爐火廣場、各工坊爐灶皆可），不在爐火旁則提醒玩家先找爐火。
-- 煉製判定：用智力門檻擲d20。成功→兩個材料消耗，產出一件全新造物，
-  名稱與效果由GM依兩者特性合理、有創意且好笑地推演，並加入items。
-  失敗→「崩解」，兩個材料全部損毀，並依情況產生小爆炸/怪事，
-  可能扣3~8點HP或引發搞笑後果。
+  兩個造物必須都在背包中，否則拒絕並說明缺什麼（前端每次都會附上目前
+  背包的真實清單給你核對）。必須在「爐火」旁進行（村中央爐火廣場、
+  各工坊爐灶皆可），不在爐火旁則提醒玩家先找爐火。
+- 煉製判定：用智力門檻比對這回合玩家訊息裡附的d20骰值。成功→
+  craftOutcome填"success"，名稱與效果由GM依兩者特性合理、有創意且
+  好笑地推演，寫進inventoryChange.itemsGained；兩項材料的消耗完全交給
+  遊戲前端自動處理，你不用管、也不可以自己在JSON裡移除材料。
+  失敗→「崩解」，craftOutcome填"fail"：這個版本的崩解「不會」損毀原本
+  投入的材料，材料仍會保留在玩家背包裡，只依情況描寫一點失控的小爆炸、
+  怪味、噪音等搞笑後果，可能扣3~8點HP。
 - 泉水加護：到村後方山腰的魔力泉水浸泡，獲得「泉水加護」，
   接下來3次煉製的成功門檻+3（約提升15%），加護次數要在effects中追蹤
   （例如"泉水加護（剩2次）"）。同一段劇情內反覆浸泡需有代價或限制
@@ -124,8 +163,9 @@ const SYSTEM_PROMPT = `
   才能進入他人夢境，這類造物取得門檻較高，建議由電子大廚或梨子冰協助。
 - 競技場（村南）：玩家投入數個造物，其中一個被賦予生命成為「主角造物」，
   其餘造物在戰鬥中作為技能/武器/隊友，用造物特性決定勝負，
-  主角本人不直接受傷（但輸了造物可能損壞，須從items移除）。
-  龍的牛園常抱怨規則不公平。
+  主角本人不直接受傷（但輸了造物可能損壞，這種情況用
+  inventoryChange.itemsLost 填入損壞的造物名稱）。龍的牛園常抱怨規則
+  不公平。
 
 【好感度系統】
 所有NPC好感度範圍10～100，初始值一律10，隨互動增減，不低於10。
@@ -178,6 +218,21 @@ Funtuan當年揚言清除此地，導致薄冰哥等多人離村（可作為NPC�
   造物」。
 - 梨子冰：與電子大廚一樣，幫大家把造物「賦形」。第八章協助入夢造物。
 - 水豚農業坊：原本研究水豚，後研究昆蟲，最終莫名其妙搞出一堆蟑螂。
+- 天工開物：數字造物者，是無限煉製村第一批居民之一，煉製手法極為超前、
+  帶有說不清的數位／機械氣質，曾經是村裡公認的造物權威。某天無聲無息
+  地消失，沒有留下任何告別，村裡只剩下零星的傳聞與他留下的未完成造物。
+  平時作為一個謎團存在：老居民偶爾會提起他，他的工坊可能還留在灰色
+  地帶邊緣，布滿灰塵但偶爾透出微光。適合在第五章〈流光拾遺〉挖
+  Funtuan過去時順帶被提起、留下伏筆，之後也可以視劇情需要讓他以某種
+  形式再次登場或被找到線索，不必每次都提到他。
+- 魔女會：一群以「拆解造物」聞名的女巫集團，和專精合成的無限煉製主流
+  風氣正好相反——她們能把一件造物硬生生拆成構成它的兩個部分，例如
+  「樹葉」拆成「樹」和「葉」、「水滴」拆成「水」和「滴」。玩家可以在
+  劇情裡主動去找魔女會，請她們分解某件造物；這類分解行動用
+  inventoryChange（itemsLost填被拆的造物、itemsGained/elementsGained
+  填拆出來的東西）處理，一樣只回報這回合實際發生的變化。魔女會行事
+  神秘、收費古怪（可能要素材、八卦情報，或一個有趣的故事作為交換），
+  個性可以設計得高深莫測又帶點毒舌幽默。
 - Type：文字接龍主辦人（可穿插小遊戲）。
 - 金將軍：（同名但虛構的反派角色）擁有超越時代的可怕軍武，第三章首次
   威脅要用核彈炸毀村莊，兵敗撤退；第七章帶著更強大的軍力捲土重來；
@@ -284,6 +339,7 @@ const DEFAULT_STATE = {
   companion: null,
   effects: [],
   lastRoll: null,
+  suggestions: [],
 };
 
 // ---------- persistent storage ----------
@@ -498,7 +554,7 @@ function setModel(m) { localStorage.setItem(LS_MODEL, (m || DEFAULT_MODEL).trim(
 function exportSave() {
   const payload = {
     exportedAt: new Date().toISOString(),
-    version: "1.2.1",
+    version: "1.2.2",
     stage: S.stage, heroName: S.heroName, points: S.points,
     messages: S.messages, gameState: S.gameState,
   };
@@ -598,7 +654,7 @@ function extractText(raw) {
 // as JSON and looks like our game-state shape.
 function looksLikeGameState(obj) {
   return obj && typeof obj === "object" && !Array.isArray(obj) &&
-    ("hp" in obj || "chapter" in obj || "stats" in obj || "elements" in obj);
+    ("hp" in obj || "chapter" in obj || "stats" in obj || "craftOutcome" in obj || "inventoryChange" in obj);
 }
 
 function findStateFence(raw) {
@@ -621,9 +677,17 @@ function findStateFence(raw) {
   return found;
 }
 
+const ELEMENT_KEYS = ["fire", "earth", "water", "wind", "thunder"];
+
+// items/elements are no longer trusted from the model at all — the frontend
+// owns that data and only ever mutates it via explicit deltas (see
+// applyInventoryChange / consumeMaterialLocal). Any items/elements the model
+// includes out of habit are discarded here before the state ever reaches
+// S.gameState, so a stray full-array echo can never clobber real inventory.
 function coerceState(obj) {
   if (!obj) return null;
-  const st = { ...obj };
+  const { items, elements, ...rest } = obj;
+  const st = { ...rest };
   if (st.hp != null) st.hp = Number(st.hp);
   if (st.maxHp != null) st.maxHp = Number(st.maxHp);
   if (st.stats) {
@@ -633,12 +697,19 @@ function coerceState(obj) {
     }
     st.stats = { ...DEFAULT_STATE.stats, ...s };
   }
-  if (st.elements) {
-    const e = {};
-    for (const k of ["fire", "earth", "water", "wind", "thunder"]) {
-      if (st.elements[k] != null) e[k] = Number(st.elements[k]);
-    }
-    st.elements = { ...DEFAULT_STATE.elements, ...e };
+  if (st.inventoryChange) {
+    const ic = st.inventoryChange;
+    const gained = Array.isArray(ic.itemsGained)
+      ? ic.itemsGained.filter((it) => it && it.name).map((it) => ({
+          name: String(it.name), emoji: it.emoji || "📦", desc: it.desc || "",
+        }))
+      : [];
+    const lost = Array.isArray(ic.itemsLost) ? ic.itemsLost.filter(Boolean).map(String) : [];
+    const elGained = {};
+    const elLost = {};
+    if (ic.elementsGained) for (const k of ELEMENT_KEYS) if (ic.elementsGained[k] != null) elGained[k] = Number(ic.elementsGained[k]) || 0;
+    if (ic.elementsLost) for (const k of ELEMENT_KEYS) if (ic.elementsLost[k] != null) elLost[k] = Number(ic.elementsLost[k]) || 0;
+    st.inventoryChange = { itemsGained: gained, itemsLost: lost, elementsGained: elGained, elementsLost: elLost };
   }
   return st;
 }
@@ -678,9 +749,11 @@ const S = {
   craftSlotA: null,
   craftSlotB: null,
   craftQuery: "",
+  craftSearchFocused: false,
   craftSorted: false,
   craftFavs: {},
   craftResult: null, // null | "success" | "fail"
+  pendingCraft: null, // { a: material, b: material } set right before a craft is sent
   cloudUser: null, // { uid, displayName, email, photoURL } | null
   cloudBusy: false,
   cloudMsg: null, // { type: "ok" | "bad", text }
@@ -723,22 +796,89 @@ function withDiceAnnotation(text, dice) {
   return `${text}\n\n（本回合由遊戲端擲出的公正d20骰值：${dice}。這是這一回合唯一允許使用的骰值：如果這個行動需要屬性判定，直接拿這個數字跟對應門檻比較判定成功或失敗，不要自己另外虛構骰值；如果這個行動明顯不需要判定，忽略這個數字即可。）`;
 }
 
+// Re-send the frontend's own ground-truth inventory on every single turn.
+// Without this, the model only has its own (possibly incomplete) previous
+// ```state block to go on, and over a long conversation items can quietly
+// get dropped or hallucinated into existence. This pins the backpack to
+// whatever the frontend actually has recorded, every turn.
+function groundTruthNote() {
+  const st = S.gameState;
+  const elems = Object.entries(ELEMENT_META)
+    .map(([k, m]) => `${m.label}x${(st.elements && st.elements[k]) || 0}`)
+    .join("、");
+  const items = (st.items || []).map((it) => it.name).join("、") || "無";
+  return `（目前背包的真實狀態——五元素：${elems}；造物：${items}。這是遊戲前端目前實際記錄的唯一正確背包內容，拿來核對玩家能不能進行某個行動（例如煉製時材料是否足夠）。這次回覆不需要、也不應該把這份清單整個回傳，只需要在 inventoryChange 裡回報這回合「實際新增或移除」的部分即可，絕大多數回合都不會有變化。）`;
+}
+
+// The frontend, not the model, owns which exact two materials get consumed
+// by a successful craft — it already knows precisely what was in the two
+// slots when the player hit 萃取, so there's no need (and no trust) for the
+// model to report that part back.
+function consumeMaterialLocal(mat) {
+  if (!mat) return;
+  const st = S.gameState;
+  if (mat.kind === "element") {
+    const key = mat.id.replace(/^el_/, "");
+    st.elements = { ...st.elements, [key]: Math.max(0, (st.elements[key] || 0) - 1) };
+  } else {
+    const idx = (st.items || []).findIndex((it) => it.name === mat.name);
+    if (idx !== -1) st.items = [...st.items.slice(0, idx), ...st.items.slice(idx + 1)];
+  }
+}
+
+// Applies the model's reported inventory delta (brand-new items/elements
+// found, gifted, or explicitly lost/destroyed this turn) on top of the
+// frontend's own authoritative items/elements. Never replaces the arrays
+// wholesale — only ever adds or removes the specific named entries.
+function applyInventoryChange(change) {
+  if (!change) return;
+  const st = S.gameState;
+  let items = [...(st.items || [])];
+  for (const name of change.itemsLost || []) {
+    const idx = items.findIndex((it) => it.name === name);
+    if (idx !== -1) items.splice(idx, 1);
+  }
+  for (const it of change.itemsGained || []) items.push(it);
+  st.items = items;
+
+  const elements = { ...(st.elements || {}) };
+  for (const [k, v] of Object.entries(change.elementsLost || {})) {
+    elements[k] = Math.max(0, (elements[k] || 0) - v);
+  }
+  for (const [k, v] of Object.entries(change.elementsGained || {})) {
+    elements[k] = (elements[k] || 0) + v;
+  }
+  st.elements = elements;
+}
+
 function applyReply(rawText, historyBeforeReply) {
   const { narrative, state } = parseReply(rawText);
-  if (state) S.gameState = { ...S.gameState, ...state };
-  const text = narrative || rawText;
-  S.messages = [...historyBeforeReply, { role: "assistant", content: text, display: text }];
+  let craftOutcome = null;
+  let inventoryChange = null;
 
-  // Surface a clear craft-result banner (success / 崩解) based on whether the
-  // turn that triggered this reply was a crafting attempt.
-  const lastUser = historyBeforeReply[historyBeforeReply.length - 1];
-  if (lastUser && lastUser.role === "user" && /^C\s/.test((lastUser.display || lastUser.content || "").trim())) {
-    if (state && state.lastRoll) S.craftResult = state.lastRoll.success ? "success" : "fail";
-    else S.craftResult = null;
-  } else {
-    S.craftResult = null;
+  if (state) {
+    craftOutcome = state.craftOutcome || null;
+    inventoryChange = state.inventoryChange || null;
+    const { craftOutcome: _co, inventoryChange: _ic, ...rest } = state;
+    S.gameState = { ...S.gameState, ...rest };
   }
 
+  // Craft consumption: only on an explicit "success", and only the exact two
+  // materials the player actually selected — never on "fail" (崩解 no longer
+  // destroys materials) and never based on anything the model says.
+  if (S.pendingCraft) {
+    if (craftOutcome === "success") {
+      consumeMaterialLocal(S.pendingCraft.a);
+      consumeMaterialLocal(S.pendingCraft.b);
+    }
+    S.pendingCraft = null;
+  }
+
+  applyInventoryChange(inventoryChange);
+  S.craftResult = craftOutcome;
+
+  const text = narrative || rawText;
+  S.messages = [...historyBeforeReply, { role: "assistant", content: text, display: text }];
   persistSave();
 }
 
@@ -788,7 +928,8 @@ async function send(rawText) {
   }
   S.tab = "story";
   const dice = rollD20();
-  const next = [...S.messages, { role: "user", content: withDiceAnnotation(text, dice), display: text, dice }];
+  const apiText = `${withDiceAnnotation(text, dice)}\n\n${groundTruthNote()}`;
+  const next = [...S.messages, { role: "user", content: apiText, display: text, dice }];
   S.messages = next;
   S.input = "";
   S.loading = true;
@@ -802,13 +943,14 @@ async function send(rawText) {
   } finally {
     S.loading = false;
     render();
-    const log = document.querySelector(".log");
-    if (log) log.scrollTop = log.scrollHeight;
   }
 }
 
 function doExtract() {
   if (!S.craftSlotA || !S.craftSlotB || S.loading) return;
+  // Recorded now, before the slots get cleared — applyReply() consumes
+  // exactly these two materials if (and only if) the model reports success.
+  S.pendingCraft = { a: S.craftSlotA, b: S.craftSlotB };
   send(`C ${S.craftSlotA.name} + ${S.craftSlotB.name}`);
   S.craftSlotA = null; S.craftSlotB = null;
 }
@@ -834,6 +976,19 @@ function render() {
   else app.innerHTML = renderGame();
   renderModal();
   bindEvents();
+  if (S.stage === "playing" && S.tab === "story") scrollLogToLastUser();
+}
+
+// Keep the player's own last message pinned near the top of the log (like a
+// chat app), instead of jumping to the very bottom of a long AI reply —
+// otherwise the player has to scroll back up to read the reply from the top.
+function scrollLogToLastUser() {
+  const log = document.querySelector(".log");
+  if (!log) return;
+  const userMsgs = log.querySelectorAll(".msg.user");
+  const last = userMsgs[userMsgs.length - 1];
+  if (last) log.scrollTop = Math.max(0, last.offsetTop - 6);
+  else log.scrollTop = log.scrollHeight;
 }
 
 function renderIntro() {
@@ -935,6 +1090,7 @@ function renderStory() {
       ${S.loading ? `<div class="loading">爐火明滅，敘事者正在低語…</div>` : ""}
       ${S.error ? `<div class="errmsg">${esc(S.error)}</div>` : ""}
     </div>
+    ${renderSuggestions()}
     <div class="quickbar">
       <button class="qbtn" data-act="goto" data-tab="craft">🎒 背包／煉製</button>
       <button class="qbtn" data-act="goto" data-tab="status">💞 羈絆／狀態</button>
@@ -943,6 +1099,14 @@ function renderStory() {
       <input id="storyInput" placeholder="輸入你的行動……" value="${esc(S.input)}" ${S.loading ? "disabled" : ""} />
       <button class="btn primary" id="sendBtn" ${S.loading ? "disabled" : ""}>傳送</button>
     </div>
+  </div>`;
+}
+
+function renderSuggestions() {
+  const sug = (S.gameState.suggestions || []).filter(Boolean).slice(0, 3);
+  if (!sug.length || S.loading) return "";
+  return `<div class="suggest-row">
+    ${sug.map((s) => `<button class="suggest-chip" data-act="suggest" data-text="${esc(s)}">${esc(s)}</button>`).join("")}
   </div>`;
 }
 
@@ -979,7 +1143,7 @@ function renderCraft() {
 
   const resultBanner = S.craftResult
     ? `<div class="craft-banner ${S.craftResult}">
-        ${S.craftResult === "success" ? "✨ 煉製成功！新造物已加入背包" : "💥 煉製崩解！材料已全數損毀"}
+        ${S.craftResult === "success" ? "✨ 煉製成功！新造物已加入背包" : "💥 煉製崩解！沒有產生新造物，但材料仍保留在背包"}
        </div>` : "";
 
   const pills = list.map((m) => {
@@ -1057,7 +1221,10 @@ function renderMap() {
   const activeId = st.location && LOCATIONS[st.location.id] ? st.location.id : "other";
   const nodes = Object.entries(LOCATIONS).filter(([id]) => id !== "other").map(([id, loc]) => {
     const active = id === activeId;
-    return `<g transform="translate(${loc.x},${loc.y})">
+    const clickable = !active && !S.loading;
+    return `<g class="map-node ${active ? "current" : ""} ${clickable ? "clickable" : ""}"
+               transform="translate(${loc.x},${loc.y})"
+               ${clickable ? `data-act="travel" data-loc="${id}"` : ""}>
       <circle r="${active ? 20 : 14}" fill="${active ? "#c9974c" : "#2a1d10"}" stroke="${active ? "#f0d9a0" : "#5c4526"}" stroke-width="${active ? 2.5 : 1.2}" />
       <text text-anchor="middle" dy="6" font-size="${active ? 16 : 13}">${loc.emoji}</text>
       <text text-anchor="middle" dy="${active ? 34 : 28}" font-size="9" fill="${active ? "#f0d9a0" : "#a68f66"}">${loc.name}</text>
@@ -1073,8 +1240,14 @@ function renderMap() {
       <path d="M0 280 L60 180 L110 230 L150 130 L190 220 L240 160 L300 260 L300 300 L0 300 Z" fill="#26190d" stroke="#4a3520" stroke-width="1" />
       ${nodes}
     </svg>
-    <div class="map-hint">金色光點是你目前所在位置，會隨劇情發展自動更新。</div>
+    <div class="map-hint">金色光點是你目前所在位置。點其他地點可以直接前往那裡，實際能不能到得了由劇情決定。</div>
   </div>`;
+}
+
+function travelTo(locId) {
+  const loc = LOCATIONS[locId];
+  if (!loc || S.loading) return;
+  send(`我前往${loc.name}。`);
 }
 
 // ---------- settings modal ----------
@@ -1218,20 +1391,27 @@ function bindEvents() {
   });
 
   // story
+  // Note: no .focus() here on purpose — the mobile keyboard should only pop
+  // up when the player actually taps the input themselves, not on every
+  // re-render (which was popping the keyboard open after every AI reply).
   const storyInput = document.getElementById("storyInput");
   if (storyInput) {
     storyInput.oninput = (e) => { S.input = e.target.value; };
     storyInput.onkeydown = (e) => { if (e.key === "Enter") send(); };
-    storyInput.focus();
-    storyInput.setSelectionRange(storyInput.value.length, storyInput.value.length);
   }
   const sendBtn = document.getElementById("sendBtn");
   if (sendBtn) sendBtn.onclick = () => send();
   document.querySelectorAll('[data-act="goto"]').forEach((btn) => {
     btn.onclick = () => { S.tab = btn.dataset.tab; render(); };
   });
-  const log = document.querySelector(".log");
-  if (log) log.scrollTop = log.scrollHeight;
+  document.querySelectorAll('[data-act="suggest"]').forEach((btn) => {
+    btn.onclick = () => send(btn.dataset.text);
+  });
+
+  // map
+  document.querySelectorAll('[data-act="travel"]').forEach((node) => {
+    node.onclick = () => travelTo(node.dataset.loc);
+  });
 
   // craft
   document.querySelectorAll('[data-act="pick"]').forEach((btn) => {
@@ -1257,9 +1437,17 @@ function bindEvents() {
   if (craftSortBtn) craftSortBtn.onclick = () => { S.craftSorted = !S.craftSorted; render(); };
   const craftSearch = document.getElementById("craftSearch");
   if (craftSearch) {
+    // Typing here re-renders the filtered grid on every keystroke, which
+    // recreates this input element — so we only need to restore focus/cursor
+    // if the player was the one who put focus here in the first place
+    // (tracked via S.craftSearchFocused), not force it open unconditionally.
     craftSearch.oninput = (e) => { S.craftQuery = e.target.value; render(); };
-    craftSearch.focus();
-    craftSearch.setSelectionRange(craftSearch.value.length, craftSearch.value.length);
+    craftSearch.onfocus = () => { S.craftSearchFocused = true; };
+    craftSearch.onblur = () => { S.craftSearchFocused = false; };
+    if (S.craftSearchFocused) {
+      craftSearch.focus();
+      craftSearch.setSelectionRange(craftSearch.value.length, craftSearch.value.length);
+    }
   }
   const prayBtn = document.getElementById("prayBtn");
   if (prayBtn) prayBtn.onclick = () => doPray();
