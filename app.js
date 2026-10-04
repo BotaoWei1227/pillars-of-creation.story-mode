@@ -1,4 +1,4 @@
-const SYSTEM_PROMPT = `
+const CORE_PROMPT = `
 【以下為遊戲主持人（GM）設定，請完整遵守並立即開始擔任主持人】
 【版本：V1.2.3】
 
@@ -15,10 +15,10 @@ const SYSTEM_PROMPT = `
 【回覆格式－務必嚴格遵守】
 每次回覆分成兩部分：
 1) 劇情文字：正常小說敘述、對話（純文字，繁體中文，不夾雜任何markdown code fence）。
-2) 系統狀態：在回覆最後，輸出「唯一一個」用 \`\`\`state 開頭、\`\`\`
+2) 系統狀態：在回覆最後，輸出「唯一一個」用 \\\`\\\`\\\`state 開頭、\\\`\\\`\\\`
    結尾的 JSON code fence，內容是目前完整遊戲狀態，欄位需完整、每回合都
    要重新輸出整份（不是差異），格式如下：
-\`\`\`state
+\\\`\\\`\\\`state
 {
   "chapter": "第一章〈樂土初啟〉",
   "location": { "id": "furnace", "name": "爐火廣場" },
@@ -38,7 +38,7 @@ const SYSTEM_PROMPT = `
     "elementsLost": {}
   }
 }
-\`\`\`
+\\\`\\\`\\\`
 - location.id 必須是以下其中之一：entrance（山下入口／初見村莊）、
   furnace（爐火廣場）、spring（魔力泉水）、arena（競技場）、
   shop（商街／白文鳥樂園）、factory（帝國機械工坊）、greyzone（灰色地帶）、
@@ -197,98 +197,9 @@ const SYSTEM_PROMPT = `
 Funtuan當年揚言清除此地，導致薄冰哥等多人離村（可作為NPC口中的八卦與
 劇情伏筆，不必主動提太多）。玩家所在位置務必準確反映在state.location。
 第九章起場景會離開村莊，前往尼泊爾雪山，第十章抵達將軍總部山頭要塞。
+`;
 
-【主要角色（全為村民，個性要鮮明有梗）】
-- Funtuan：無限煉製創辦人。年輕時在巴黎以精湛法術經營情色產業（僅作
-  背景八卦，不描寫露骨內容），後來用魔法治療黑死病患者，最終在阿爾卑斯
-  找到魔力泉水，致力創造新造物。村子壯大後揚言清除逃稅的灰色地帶
-  煉金術師，導致多人離開，後辭去村長職務，但政策基本仍由他制定。
-  開場親自迎接主角並贈送五大元素。第三章昏倒，託付大家繼承意志。
-  第四章因泉水犧牲魔力而保住性命，但虛弱調養中。第五章他的過去會被
-  進一步揭露：清除灰色地帶的執念，其實源自年輕時曾被同行欺騙、壓榨
-  的痛苦經驗。
-- 粉熊：新任村長，負責事件公告。
-- Gentle Larry（尖頭哥）：輔佐Funtuan的狠角色，精通調整泉水與爐火蒸氣設備。
-  第六章泉水升級工程的技術主力。
-- 龍的牛園（龍哥）：熱愛競技場，是競技場常客，多次請求Funtuan讓競技更公平。
-- 帝國機械（Dialise）：德意志帝國來的，以機械工業化量產造物，為多種
-  造物的創生者。第六章負責提供機械增幅裝置協助泉水升級。
-- 萬象／九尾狐妖 Gura：原是狐狸，幻化成人，人形「萬象」是美男子，
-  另一型態「Gura」酷似二次元少女，是夜夜的情人。第六章可貢獻妖力。
-- 夜夜：萬象的老公，自稱「夜之美男子」，也是位大創生主。
-- 白文鳥：經營「白文鳥樂園」商店，致力把全世界的鳥合成出來，精通鳥語。
-  第六章可能找傳說候鳥帶回天外異物協助升級泉水。
-- 末日聖母號：一隻會說話的豬，精通各種村長主辦的活動。
-- 市場有急事：戰鬥專家，可教主角戰鬥。第七章金將軍復出後負責訓練村民
-  應戰。
-- 電子大廚：高級畫家，畫技與梨子冰並稱村中雙絕。第八章協助製作「入夢
-  造物」。
-- 梨子冰：與電子大廚一樣，幫大家把造物「賦形」。第八章協助入夢造物。
-- 水豚農業坊：原本研究水豚，後研究昆蟲，最終莫名其妙搞出一堆蟑螂。
-- 天工開物：數字造物者，是無限煉製村第一批居民之一，煉製手法極為超前、
-  帶有說不清的數位／機械氣質，曾經是村裡公認的造物權威。某天無聲無息
-  地消失，沒有留下任何告別，村裡只剩下零星的傳聞與他留下的未完成造物。
-  平時作為一個謎團存在：老居民偶爾會提起他，他的工坊可能還留在灰色
-  地帶邊緣，布滿灰塵但偶爾透出微光。適合在第五章〈流光拾遺〉挖
-  Funtuan過去時順帶被提起、留下伏筆，之後也可以視劇情需要讓他以某種
-  形式再次登場或被找到線索，不必每次都提到他。
-- 魔女會：一群以「拆解造物」聞名的女巫集團，和專精合成的無限煉製主流
-  風氣正好相反——她們能把一件造物硬生生拆成構成它的兩個部分，例如
-  「樹葉」拆成「樹」和「葉」、「水滴」拆成「水」和「滴」。玩家可以在
-  劇情裡主動去找魔女會，請她們分解某件造物；這類分解行動用
-  inventoryChange（itemsLost填被拆的造物、itemsGained/elementsGained
-  填拆出來的東西）處理，一樣只回報這回合實際發生的變化。魔女會行事
-  神秘、收費古怪（可能要素材、八卦情報，或一個有趣的故事作為交換），
-  個性可以設計得高深莫測又帶點毒舌幽默。
-- Type：文字接龍主辦人（可穿插小遊戲）。
-- 金將軍：（同名但虛構的反派角色）擁有超越時代的可怕軍武，第三章首次
-  威脅要用核彈炸毀村莊，兵敗撤退；第七章帶著更強大的軍力捲土重來；
-  第八章用「昏睡紅茶」放倒全村；第九章躲在尼泊爾雪山深處的總部；
-  第十章迎來最終決戰。可依玩家選擇讓他黑化到底、被說服收手，或有
-  更複雜的過去動機，結局不用單一走向。
-
-【十章架構，需保留核心事件，並安排意外轉折與笑點】
-第一章〈樂土初啟〉：Funtuan迎接主角，帶他認識村子、爐火、泉水、各村民，
-並教學煉製。順便帶主角去南方競技場打一場（龍哥登場）。第一章末伴侶系統開放。
-
-第二章〈蟑螂之災〉：水豚農業坊的蟑螂失控，全村總動員滅蟑。蟑螂越來越
-離譜：肌肉蟑螂、魔法蟑螂、蟑螂娘、蟑螂大軍……（保持搞笑，不色情露骨）。
-玩家需用煉製造物想辦法對付。
-
-第三章〈地堡之戰〉：金將軍揚言用核彈炸毀村莊，逼村民加入他，野心統治
-世界。大家潛入他的高科技地堡破壞計畫。最後Funtuan昏倒，要大家繼承意志。
-
-第四章〈泉水之殤〉：救活Funtuan的方法只有動用泉水的魔力，大家寧可讓
-泉水失去魔力也要救他。Funtuan保住性命但虛弱，泉水暫時枯竭，村子士氣
-與煉製效率都受到影響，為後續劇情埋下伏筆。
-
-第五章〈流光拾遺〉：泉水枯竭、Funtuan調養中話變少，主角與村民開始好奇
-他的過去。透過舊物、日記、巴黎故人來訪等線索，逐步拼湊出他年輕時的
-情色產業生意、瘟疫治療、尋找泉水的旅程，以及他為何如此痛恨偷稅漏稅
-灰色地帶煉金術師的真正原因（源自年輕時被同行出賣的傷痛）。
-
-第六章〈眾志重光〉：既然泉水枯竭，全村決定合力升級／重鑄泉水。需要
-主角完成多項支線任務與高難度合成挑戰：帝國機械提供機械增幅裝置、
-Gentle Larry調校蒸氣系統、萬象與夜夜貢獻妖力、白文鳥找傳說候鳥帶回
-天外異物……最終泉水升級成功，加護效果比以往更強。
-
-第七章〈將軍歸來〉：金將軍捲土重來，這次不再只是威脅，而是帶著遠超
-上次的軍武全面進攻村莊，戰鬥難度大幅提升，村民須動員應戰，主角需要
-善用升級後的泉水加護與高階合成物才能撐住。
-
-第八章〈昏睡紅茶〉：金將軍不宣而戰，把「昏睡紅茶」混入村中水源或茶會，
-全村（除主角外）陷入昏睡。主角需要合成特殊的「入夢造物」，逐一進入
-主要村民的夢境，找出他們內心的心結或恐懼並加以治癒，才能喚醒大家、
-重整旗鼓對抗將軍。
-
-第九章〈雪山孤征〉：眾人（或主角先行）跋涉前往金將軍藏身的尼泊爾雪山
-總部，一路要克服高原環境、哨兵機關、雪崩等考驗，並運用煉製與屬性判定
-過關斬將。
-
-第十章〈終焉一擊〉：抵達將軍總部，展開最終決戰，擊敗金將軍，恢復和平。
-結局依玩家的選擇、好感度、屬性走向產生不同分支（感化他、擊敗他、
-說服他放下野心等），不用單一固定結局。
-
+const OPENING_FLOW = `
 【遊戲開場流程】
 第一則回覆時：先用一小段話簡述世界觀重點，接著說明五大屬性、體力/HP
 公式、各流派玩法建議（蠻力流/敏捷流/煉製智力流/魅力流/生存輔助流）。
@@ -299,6 +210,214 @@ Gentle Larry調校蒸氣系統、萬象與夜夜貢獻妖力、白文鳥找傳�
 entrance）。別忘了在回覆最後附上完整的state JSON。骰子系統、受傷/死亡
 規則、好感度系統、煉製系統從此刻起都要嚴格執行。
 `;
+
+const CHARACTER_CORE_BIOS = {
+  funtuan: `- Funtuan：無限煉製創辦人。年輕時在巴黎以精湛法術經營情色產業（僅作
+  背景八卦，不描寫露骨內容），後來用魔法治療黑死病患者，最終在阿爾卑斯
+  找到魔力泉水，致力創造新造物。村子壯大後揚言清除逃稅的灰色地帶
+  煉金術師，導致多人離開，後辭去村長職務，但政策基本仍由他制定。
+  開場親自迎接主角並贈送五大元素。第三章昏倒，託付大家繼承意志。
+  第四章因泉水犧牲魔力而保住性命，但虛弱調養中。第五章他的過去會被
+  進一步揭露：清除灰色地帶的執念，其實源自年輕時曾被同行欺騙、壓榨
+  的痛苦經驗。`,
+  fenxiong: `- 粉熊：新任村長，負責事件公告。`,
+  gentlelarry: `- Gentle Larry（尖頭哥）：輔佐Funtuan的狠角色，精通調整泉水與爐火蒸氣設備。
+  第六章泉水升級工程的技術主力。`,
+  general: `- 金將軍：（同名但虛構的反派角色）擁有超越時代的可怕軍武，第三章首次
+  威脅要用核彈炸毀村莊，兵敗撤退；第七章帶著更強大的軍力捲土重來；
+  第八章用「昏睡紅茶」放倒全村；第九章躲在尼泊爾雪山深處的總部；
+  第十章迎來最終決戰。可依玩家選擇讓他黑化到底、被說服收手，或有
+  更複雜的過去動機，結局不用單一走向。`,
+  monuhui: `- 魔女會：一群以「拆解造物」聞名的女巫集團，和專精合成的無限煉製主流
+  風氣正好相反——她們能把一件造物硬生生拆成構成它的兩個部分，例如
+  「樹葉」拆成「樹」和「葉」、「水滴」拆成「水」和「滴」。玩家可以在
+  劇情裡主動去找魔女會，請她們分解某件造物；這類分解行動用
+  inventoryChange（itemsLost填被拆的造物、itemsGained/elementsGained
+  填拆出來的東西）處理，一樣只回報這回合實際發生的變化。魔女會行事
+  神秘、收費古怪（可能要素材、八卦情報，或一個有趣的故事作為交換），
+  個性可以設計得高深莫測又帶點毒舌幽默。`,
+  tiangong: `- 天工開物：數字造物者，是無限煉製村第一批居民之一，煉製手法極為超前、
+  帶有說不清的數位／機械氣質，曾經是村裡公認的造物權威。某天無聲無息
+  地消失，沒有留下任何告別，村裡只剩下零星的傳聞與他留下的未完成造物。
+  平時作為一個謎團存在：老居民偶爾會提起他，他的工坊可能還留在灰色
+  地帶邊緣，布滿灰塵但偶爾透出微光。適合在第五章〈流光拾遺〉挖
+  Funtuan過去時順帶被提起、留下伏筆，之後也可以視劇情需要讓他以某種
+  形式再次登場或被找到線索，不必每次都提到他。`,
+};
+
+const CHARACTER_ROTATING_BIOS = {
+  longge: `- 龍的牛園（龍哥）：熱愛競技場，是競技場常客，多次請求Funtuan讓競技更公平。`,
+  dialise: `- 帝國機械（Dialise）：德意志帝國來的，以機械工業化量產造物，為多種
+  造物的創生者。第六章負責提供機械增幅裝置協助泉水升級。`,
+  wanxiang: `- 萬象／九尾狐妖 Gura：原是狐狸，幻化成人，人形「萬象」是美男子，
+  另一型態「Gura」酷似二次元少女，是夜夜的情人。第六章可貢獻妖力。`,
+  yeye: `- 夜夜：萬象的老公，自稱「夜之美男子」，也是位大創生主。`,
+  baiwenniao: `- 白文鳥：經營「白文鳥樂園」商店，致力把全世界的鳥合成出來，精通鳥語。
+  第六章可能找傳說候鳥帶回天外異物協助升級泉水。`,
+  modri: `- 末日聖母號：一隻會說話的豬，精通各種村長主辦的活動。`,
+  shichang: `- 市場有急事：戰鬥專家，可教主角戰鬥。第七章金將軍復出後負責訓練村民
+  應戰。`,
+  dianzi: `- 電子大廚：高級畫家，畫技與梨子冰並稱村中雙絕。第八章協助製作「入夢
+  造物」。`,
+  lizibing: `- 梨子冰：與電子大廚一樣，幫大家把造物「賦形」。第八章協助入夢造物。`,
+  shuitun: `- 水豚農業坊：原本研究水豚，後研究昆蟲，最終莫名其妙搞出一堆蟑螂。`,
+  type: `- Type：文字接龍主辦人（可穿插小遊戲）。`,
+};
+
+const CHARACTER_SHORT_TAGS = {
+  longge: "龍的牛園（龍哥）：競技場常客，常抱怨競技規則不公平。",
+  dialise: "帝國機械（Dialise）：德意志帝國來的機械量產造物者。",
+  wanxiang: "萬象／九尾狐妖Gura：人形美男子／二次元少女兩種型態，夜夜的情人。",
+  yeye: "夜夜：萬象的老公，自稱「夜之美男子」，大創生主。",
+  baiwenniao: "白文鳥：「白文鳥樂園」店主，想合成全世界的鳥，精通鳥語。",
+  modri: "末日聖母號：會說話的豬，精通村長主辦的各種活動。",
+  shichang: "市場有急事：戰鬥專家，可教主角戰鬥。",
+  dianzi: "電子大廚：高級畫家，擅長幫造物「賦形」。",
+  lizibing: "梨子冰：與電子大廚齊名的賦形師。",
+  shuitun: "水豚農業坊：原本研究水豚，後來搞出一堆蟑螂的學者。",
+  type: "Type：文字接龍活動主辦人。",
+};
+
+// Which chapter each rotating-cast character is "home" to — they get a
+// full bio when the story is within 1 chapter of it, otherwise just the
+// one-line tag above. This is the actual token-saving lever: by chapter
+// 9-10 most of the early-village cast drops to short tags.
+const CHARACTER_HOME_CHAPTER = {
+  longge: 1,
+  dialise: 6,
+  wanxiang: 6,
+  yeye: 6,
+  baiwenniao: 6,
+  modri: 1,
+  shichang: 7,
+  dianzi: 8,
+  lizibing: 8,
+  shuitun: 2,
+  type: 1,
+};
+
+const CHAPTER_DETAIL = {
+  1: `【十章架構，需保留核心事件，並安排意外轉折與笑點】
+第一章〈樂土初啟〉：Funtuan迎接主角，帶他認識村子、爐火、泉水、各村民，
+並教學煉製。順便帶主角去南方競技場打一場（龍哥登場）。第一章末伴侶系統開放。`,
+  2: `第二章〈蟑螂之災〉：水豚農業坊的蟑螂失控，全村總動員滅蟑。蟑螂越來越
+離譜：肌肉蟑螂、魔法蟑螂、蟑螂娘、蟑螂大軍……（保持搞笑，不色情露骨）。
+玩家需用煉製造物想辦法對付。`,
+  3: `第三章〈地堡之戰〉：金將軍揚言用核彈炸毀村莊，逼村民加入他，野心統治
+世界。大家潛入他的高科技地堡破壞計畫。最後Funtuan昏倒，要大家繼承意志。`,
+  4: `第四章〈泉水之殤〉：救活Funtuan的方法只有動用泉水的魔力，大家寧可讓
+泉水失去魔力也要救他。Funtuan保住性命但虛弱，泉水暫時枯竭，村子士氣
+與煉製效率都受到影響，為後續劇情埋下伏筆。`,
+  5: `第五章〈流光拾遺〉：泉水枯竭、Funtuan調養中話變少，主角與村民開始好奇
+他的過去。透過舊物、日記、巴黎故人來訪等線索，逐步拼湊出他年輕時的
+情色產業生意、瘟疫治療、尋找泉水的旅程，以及他為何如此痛恨偷稅漏稅
+灰色地帶煉金術師的真正原因（源自年輕時被同行出賣的傷痛）。`,
+  6: `第六章〈眾志重光〉：既然泉水枯竭，全村決定合力升級／重鑄泉水。需要
+主角完成多項支線任務與高難度合成挑戰：帝國機械提供機械增幅裝置、
+Gentle Larry調校蒸氣系統、萬象與夜夜貢獻妖力、白文鳥找傳說候鳥帶回
+天外異物……最終泉水升級成功，加護效果比以往更強。`,
+  7: `第七章〈將軍歸來〉：金將軍捲土重來，這次不再只是威脅，而是帶著遠超
+上次的軍武全面進攻村莊，戰鬥難度大幅提升，村民須動員應戰，主角需要
+善用升級後的泉水加護與高階合成物才能撐住。`,
+  8: `第八章〈昏睡紅茶〉：金將軍不宣而戰，把「昏睡紅茶」混入村中水源或茶會，
+全村（除主角外）陷入昏睡。主角需要合成特殊的「入夢造物」，逐一進入
+主要村民的夢境，找出他們內心的心結或恐懼並加以治癒，才能喚醒大家、
+重整旗鼓對抗將軍。`,
+  9: `第九章〈雪山孤征〉：眾人（或主角先行）跋涉前往金將軍藏身的尼泊爾雪山
+總部，一路要克服高原環境、哨兵機關、雪崩等考驗，並運用煉製與屬性判定
+過關斬將。`,
+  10: `第十章〈終焉一擊〉：抵達將軍總部，展開最終決戰，擊敗金將軍，恢復和平。
+結局依玩家的選擇、好感度、屬性走向產生不同分支（感化他、擊敗他、
+說服他放下野心等），不用單一固定結局。`,
+};
+
+const CHAPTER_SUMMARY_LINES = [
+  `第一章〈樂土初啟〉：Funtuan迎接主角、認識村子與煉製系統，帶去競技場，章末伴侶系統開放。`,
+  `第二章〈蟑螂之災〉：水豚農業坊的蟑螂失控，全村總動員滅蟑，越來越離譜。`,
+  `第三章〈地堡之戰〉：金將軍首次威脅核彈炸村，眾人潛入地堡破壞計畫，Funtuan昏倒。`,
+  `第四章〈泉水之殤〉：犧牲泉水魔力救回Funtuan，泉水暫時失去魔力，村子陷入低潮。`,
+  `第五章〈流光拾遺〉：泉水枯竭、Funtuan調養中，眾人挖出他的過去與灰色地帶執念的由來。`,
+  `第六章〈眾志重光〉：全村協力升級／重鑄泉水，完成後加護效果比以往更強。`,
+  `第七章〈將軍歸來〉：金將軍帶著遠超上次的軍武捲土重來，全面進攻村莊。`,
+  `第八章〈昏睡紅茶〉：金將軍用昏睡紅茶放倒全村，主角需潛入眾人夢境治療心結。`,
+  `第九章〈雪山孤征〉：眾人跋涉前往金將軍藏身的尼泊爾雪山總部，克服重重考驗。`,
+  `第十章〈終焉一擊〉：抵達總部展開最終決戰，結局依玩家選擇、好感度、屬性產生分支。`,
+];
+const CN_NUM_TO_INT = { "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10 };
+function parseChapterNum(chapterStr) {
+  if (!chapterStr) return 1;
+  const m = chapterStr.match(/第([一二三四五六七八九十]+)章/);
+  if (!m) return 1;
+  return CN_NUM_TO_INT[m[1]] || 1;
+}
+
+// Builds the system prompt for this turn, scoped to the current chapter:
+// - CORE_PROMPT (format/dice/craft/inventory rules) — always, every turn.
+// - All 10 chapters as one-line summaries — always, cheap, keeps the model
+//   aware of the overall arc even outside its current window.
+// - Full paragraph detail only for the current chapter (plus the previous
+//   one, briefly, for continuity).
+// - Full character bios only for the "core" cast (always relevant) plus
+//   whichever rotating-cast characters are within 1 chapter of their home
+//   chapter; everyone else collapses to a one-line tag. This is the actual
+//   rolling window — by chapters 9-10 most of the early-village cast is
+//   just a short tag instead of a full paragraph, which is where the real
+//   token savings show up.
+function buildSystemPrompt(chapterNum, isOpening) {
+  const n = Math.min(10, Math.max(1, chapterNum || 1));
+
+  const summary = CHAPTER_SUMMARY_LINES.join("\n");
+  const detail = CHAPTER_DETAIL[n] || CHAPTER_DETAIL[1];
+  const prevDetail = n > 1 ? CHAPTER_DETAIL[n - 1] : null;
+
+  // Characters are always sent in full (reverted from the chapter-windowed
+  // trimming) — only the chapter detail stays scoped to current/previous.
+  const allRotatingBios = Object.values(CHARACTER_ROTATING_BIOS).join("\n");
+
+  return `${CORE_PROMPT}
+${isOpening ? "\n" + OPENING_FLOW + "\n" : ""}
+【十章劇情總覽（簡短，供你掌握整體走向，不代表現在就是這些章節）】
+${summary}
+
+【目前章節詳細內容】
+${prevDetail ? `（上一章，供銜接劇情參考）\n${prevDetail}\n\n` : ""}（目前章節，請依此推進劇情）
+${detail}
+
+【主要角色（全為村民，個性要鮮明有梗）】
+${CORE_KEYS_BIOS_JOINED}
+${allRotatingBios}`;
+}
+const CORE_KEYS_BIOS_JOINED = `- Funtuan：無限煉製創辦人。年輕時在巴黎以精湛法術經營情色產業（僅作
+  背景八卦，不描寫露骨內容），後來用魔法治療黑死病患者，最終在阿爾卑斯
+  找到魔力泉水，致力創造新造物。村子壯大後揚言清除逃稅的灰色地帶
+  煉金術師，導致多人離開，後辭去村長職務，但政策基本仍由他制定。
+  開場親自迎接主角並贈送五大元素。第三章昏倒，託付大家繼承意志。
+  第四章因泉水犧牲魔力而保住性命，但虛弱調養中。第五章他的過去會被
+  進一步揭露：清除灰色地帶的執念，其實源自年輕時曾被同行欺騙、壓榨
+  的痛苦經驗。
+- 粉熊：新任村長，負責事件公告。
+- Gentle Larry（尖頭哥）：輔佐Funtuan的狠角色，精通調整泉水與爐火蒸氣設備。
+  第六章泉水升級工程的技術主力。
+- 金將軍：（同名但虛構的反派角色）擁有超越時代的可怕軍武，第三章首次
+  威脅要用核彈炸毀村莊，兵敗撤退；第七章帶著更強大的軍力捲土重來；
+  第八章用「昏睡紅茶」放倒全村；第九章躲在尼泊爾雪山深處的總部；
+  第十章迎來最終決戰。可依玩家選擇讓他黑化到底、被說服收手，或有
+  更複雜的過去動機，結局不用單一走向。
+- 魔女會：一群以「拆解造物」聞名的女巫集團，和專精合成的無限煉製主流
+  風氣正好相反——她們能把一件造物硬生生拆成構成它的兩個部分，例如
+  「樹葉」拆成「樹」和「葉」、「水滴」拆成「水」和「滴」。玩家可以在
+  劇情裡主動去找魔女會，請她們分解某件造物；這類分解行動用
+  inventoryChange（itemsLost填被拆的造物、itemsGained/elementsGained
+  填拆出來的東西）處理，一樣只回報這回合實際發生的變化。魔女會行事
+  神秘、收費古怪（可能要素材、八卦情報，或一個有趣的故事作為交換），
+  個性可以設計得高深莫測又帶點毒舌幽默。
+- 天工開物：數字造物者，是無限煉製村第一批居民之一，煉製手法極為超前、
+  帶有說不清的數位／機械氣質，曾經是村裡公認的造物權威。某天無聲無息
+  地消失，沒有留下任何告別，村裡只剩下零星的傳聞與他留下的未完成造物。
+  平時作為一個謎團存在：老居民偶爾會提起他，他的工坊可能還留在灰色
+  地帶邊緣，布滿灰塵但偶爾透出微光。適合在第五章〈流光拾遺〉挖
+  Funtuan過去時順帶被提起、留下伏筆，之後也可以視劇情需要讓他以某種
+  形式再次登場或被找到線索，不必每次都提到他。`;
 
 const DEFAULT_MODEL = "gemini-3.5-flash-lite";
 const AI_STUDIO_URL = "https://aistudio.google.com/apikey";
@@ -617,7 +736,7 @@ function clearSave() {
 }
 
 // ---------- Gemini API ----------
-function callGemini(history) {
+function callGemini(history, systemPromptText) {
   const apiKey = getApiKey();
   const model = getModel();
   if (!apiKey) {
@@ -633,7 +752,7 @@ function callGemini(history) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents,
-      systemInstruction: { role: "system", parts: [{ text: SYSTEM_PROMPT }] },
+      systemInstruction: { role: "system", parts: [{ text: systemPromptText }] },
       // Narrative (400~800 Chinese characters) plus the trailing state JSON
       // (favorability/effects/suggestions/inventoryChange) can add up to
       // more than 2048 tokens. If the reply gets cut off mid-JSON, the
@@ -774,6 +893,12 @@ const S = {
   novelText: null,
   novelBusy: false,
   novelError: null,
+  // Infinite Alchemy Developer Platform import (see ia-oauth.js)
+  iaProfile: null, // { id, workshopName, emblem, displayTitle } | null
+  iaInventory: [], // raw items from GET /developer-api/v1/inventory
+  iaSelected: {}, // { [item.id]: true } — which fetched items are checked for import
+  iaBusy: false,
+  iaMsg: null, // { type: "ok" | "bad", text }
 };
 
 (function initFromSave() {
@@ -788,6 +913,147 @@ const S = {
 })();
 
 function closeModal() { S.modal = null; render(); }
+
+// ---------- Infinite Alchemy Developer Platform (OAuth + import) ----------
+// Browser-only PKCE flow; see ia-oauth.js. No Server Secret ever touches
+// this file. "玩家製作的非官方小遊戲，非 Infinite Alchemy 官方活動或帳號功能"
+// is shown wherever this section renders, per the kit's branding requirement.
+
+async function iaHandleCallbackOnLoad() {
+  if (!window.IAOAuth) return;
+  try {
+    const result = await window.IAOAuth.handleCallbackIfPresent();
+    if (result === "connected") {
+      S.modal = "settings";
+      S.iaMsg = { type: "ok", text: "已連接 Infinite Alchemy 帳號！" };
+      await iaRefreshProfileAndInventory();
+    } else if (result === "denied") {
+      S.modal = "settings";
+      S.iaMsg = { type: "bad", text: "你拒絕了授權，所以沒有連接成功。" };
+    } else if (result === "state_mismatch") {
+      S.modal = "settings";
+      S.iaMsg = { type: "bad", text: "授權驗證失敗（state 不符），請重新嘗試一次登入。" };
+    }
+  } catch (e) {
+    S.modal = "settings";
+    S.iaMsg = { type: "bad", text: "連接失敗：" + (e.message || e) };
+  } finally {
+    render();
+  }
+}
+
+async function iaConnect() {
+  if (!window.IAOAuth || !window.IAOAuth.isConfigured()) {
+    S.iaMsg = { type: "bad", text: "尚未設定 Infinite Alchemy Client ID，請先依照 ia-config.js 裡的教學設定。" };
+    render();
+    return;
+  }
+  try {
+    await window.IAOAuth.beginAuth();
+  } catch (e) {
+    S.iaMsg = { type: "bad", text: "無法開始登入：" + (e.message || e) };
+    render();
+  }
+}
+
+function iaDisconnect() {
+  if (window.IAOAuth) window.IAOAuth.disconnect();
+  S.iaProfile = null;
+  S.iaInventory = [];
+  S.iaSelected = {};
+  S.iaMsg = null;
+  render();
+}
+
+function iaFriendlyError(e) {
+  const code = e && e.code;
+  if (code === "invalid_token") return "登入已過期或被收回，請重新連接帳號。";
+  if (code === "rate_limited") return "請求太頻繁了，請稍等一下再試一次。";
+  return "讀取失敗：" + ((e && e.message) || e);
+}
+
+async function iaRefreshProfileAndInventory() {
+  S.iaBusy = true;
+  render();
+  try {
+    S.iaProfile = await window.IAOAuth.getProfile();
+    S.iaInventory = await window.IAOAuth.fetchInventory();
+    // default: everything freshly fetched starts selected for import
+    const sel = {};
+    for (const it of S.iaInventory) sel[it.id] = true;
+    S.iaSelected = sel;
+  } catch (e) {
+    if (e && e.code === "invalid_token") { S.iaProfile = null; S.iaInventory = []; }
+    S.iaMsg = { type: "bad", text: iaFriendlyError(e) };
+  } finally {
+    S.iaBusy = false;
+    render();
+  }
+}
+
+function iaToggleSelect(id) {
+  S.iaSelected = { ...S.iaSelected, [id]: !S.iaSelected[id] };
+  render();
+}
+
+// One-time admin action: push this deployment's own URL to Infinite
+// Alchemy as the registered OAuth redirect URI, via the Cloud Function in
+// /functions (which holds the Server Secret). Only works if the signed-in
+// Google account matches the backend's configured OWNER_UID — the backend
+// itself enforces that, this is just the trigger button.
+async function iaUpdateRedirectUri() {
+  if (!window.CloudFunctions) {
+    S.iaMsg = { type: "bad", text: "雲端功能還在載入，請稍等一下再試一次。" };
+    render();
+    return;
+  }
+  if (!S.cloudUser) {
+    S.iaMsg = { type: "bad", text: "請先在上面的「☁️ 雲端存檔」用 Google 帳號登入（必須是專案擁有者的帳號）。" };
+    render();
+    return;
+  }
+  const uri = (window.INFINITE_ALCHEMY_CONFIG && window.INFINITE_ALCHEMY_CONFIG.redirectUri) || "";
+  if (!confirm(`確定要把 Infinite Alchemy 的 Redirect URI 更新成：\n${uri}\n嗎？`)) return;
+  S.iaBusy = true;
+  render();
+  try {
+    const result = await window.CloudFunctions.updateInfiniteAlchemyRedirectUri(uri);
+    S.iaMsg = { type: "ok", text: `Redirect URI 已更新為：${result.redirect_uri}` };
+  } catch (e) {
+    S.iaMsg = { type: "bad", text: "更新失敗：" + (e.message || e) };
+  } finally {
+    S.iaBusy = false;
+    render();
+  }
+}
+
+function iaImportSelected() {
+  const chosen = S.iaInventory.filter((it) => S.iaSelected[it.id]);
+  if (!chosen.length) {
+    S.iaMsg = { type: "bad", text: "請至少勾選一件造物。" };
+    render();
+    return;
+  }
+  const st = S.gameState;
+  const existingNames = new Set((st.items || []).map((it) => it.name));
+  const imported = [];
+  for (const it of chosen) {
+    if (existingNames.has(it.name)) continue; // avoid obvious duplicates
+    const art = typeof it.manifestationUrl === "string" && it.manifestationUrl.startsWith("https:")
+      ? it.manifestationUrl : null;
+    imported.push({ name: it.name, emoji: it.emoji || "📦", desc: "從 Infinite Alchemy 匯入的真實造物", art });
+    existingNames.add(it.name);
+  }
+  st.items = [...(st.items || []), ...imported];
+  persistSave();
+  S.iaMsg = {
+    type: "ok",
+    text: imported.length
+      ? `已匯入 ${imported.length} 件造物到背包！`
+      : "勾選的造物背包裡已經有了，沒有新增。",
+  };
+  render();
+}
 
 // ---------- actions ----------
 function adjustPoint(key, delta) {
@@ -912,7 +1178,8 @@ async function beginGame() {
   S.messages = initMessages;
   render();
   try {
-    const raw = await callGemini(initMessages);
+    const sysPrompt = buildSystemPrompt(1, true);
+    const raw = await callGemini(initMessages, sysPrompt);
     applyReply(extractText(raw), initMessages);
   } catch (e) {
     S.error = friendlyError(e);
@@ -950,7 +1217,8 @@ async function send(rawText) {
   S.error = null;
   render();
   try {
-    const raw = await callGemini(next);
+    const sysPrompt = buildSystemPrompt(parseChapterNum(S.gameState.chapter), false);
+    const raw = await callGemini(next, sysPrompt);
     applyReply(extractText(raw), next);
   } catch (e) {
     S.error = friendlyError(e);
@@ -1161,6 +1429,7 @@ function getAllMaterials() {
     ...(st.items || []).map((it, i) => ({
       id: `it_${i}_${it.name}`, name: it.name, emoji: itemEmoji(it), ring: "#c9974c",
       count: 1, desc: it.desc, kind: "item",
+      art: (it.art && String(it.art).startsWith("https:")) ? it.art : null,
     })),
   ];
   return mats;
@@ -1181,7 +1450,10 @@ function renderCraft() {
     return `<button class="pill ${m.count <= 0 ? "disabled" : ""} ${S.craftFavs[m.id] ? "fav" : ""} ${picked ? "picked" : ""}"
       style="border-color:${m.ring}" ${m.count <= 0 ? "disabled" : ""}
       title="${esc(m.desc || "")}" data-act="pick" data-id="${esc(m.id)}">
-      <span class="pill-emoji">${m.emoji}</span><span class="pill-name">${esc(m.name)}</span>
+      ${m.art
+        ? `<img class="pill-art" src="${esc(m.art)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';" /><span class="pill-emoji" style="display:none">${m.emoji}</span>`
+        : `<span class="pill-emoji">${m.emoji}</span>`}
+      <span class="pill-name">${esc(m.name)}</span>
       ${m.kind === "element" ? `<span class="pill-count">${m.count}</span>` : ""}
     </button>`;
   }).join("") || `<div class="inv-empty">找不到符合的材料。</div>`;
@@ -1336,7 +1608,100 @@ function renderModal() {
       </div>
 
       ${renderCloudSection()}
+      ${renderInfiniteAlchemySection()}
     </div>
+  </div>`;
+}
+
+function renderInfiniteAlchemySection() {
+  const configured = window.IAOAuth && window.IAOAuth.isConfigured();
+  const connected = window.IAOAuth && window.IAOAuth.isConnected();
+  const msg = S.iaMsg
+    ? `<div class="key-status ${S.iaMsg.type === "ok" ? "ok" : "bad"}">${esc(S.iaMsg.text)}</div>`
+    : "";
+  const disclaimer = `<div class="ia-disclaimer">玩家製作的非官方小遊戲，非 Infinite Alchemy 官方活動或帳號功能。</div>`;
+
+  const adminBlock = configured ? `
+    <div class="ia-admin-block">
+      <div class="modal-section-title" style="margin-top:14px">⚠️ 管理者專用：更新 Redirect URI</div>
+      <div class="modal-hint">
+        部署到新網址後，用專案擁有者的 Google 帳號在上面「☁️ 雲端存檔」登入，
+        再按下面按鈕，會透過後端 Cloud Function（持有 Server Secret）把
+        <code>${esc((window.INFINITE_ALCHEMY_CONFIG && window.INFINITE_ALCHEMY_CONFIG.redirectUri) || "")}</code>
+        設成 Infinite Alchemy 這個應用程式的 Redirect URI。一般玩家按這顆按鈕
+        會被後端拒絕，不影響其他人。
+      </div>
+      <div class="save-actions" style="margin-top:8px">
+        <button class="btn ghost small" id="iaUpdateRedirectBtn" ${S.iaBusy ? "disabled" : ""}>
+          ${S.iaBusy ? "處理中…" : "更新 Redirect URI"}
+        </button>
+      </div>
+    </div>` : "";
+
+  if (!configured) {
+    return `
+    <div class="modal-section">
+      <div class="modal-section-title">🔗 連接 Infinite Alchemy 帳號（匯入造物）</div>
+      ${disclaimer}
+      <div class="modal-hint">
+        這個功能需要先到 Infinite Alchemy Developer Platform 申請一個應用程式，
+        拿到 Client ID 後填進 <code>ia-config.js</code>，詳細步驟請看專案裡的
+        <code>INFINITE_ALCHEMY_SETUP.md</code>。沒設定的話完全不影響遊戲本身。
+      </div>
+      ${msg}
+    </div>`;
+  }
+
+  if (!connected) {
+    return `
+    <div class="modal-section">
+      <div class="modal-section-title">🔗 連接 Infinite Alchemy 帳號（匯入造物）</div>
+      ${disclaimer}
+      <div class="modal-hint">登入後可以把你在 Infinite Alchemy 裡實際擁有的造物匯入這個遊戲的背包。只會讀取公開的基本資料與造物清單，不會讀取好友、交易或任何帳號機密資訊。</div>
+      <div class="save-actions" style="margin-top:8px">
+        <button class="btn primary small" id="iaConnectBtn">使用 Infinite Alchemy 帳號登入</button>
+      </div>
+      ${msg}
+      ${adminBlock}
+    </div>`;
+  }
+
+  const profile = S.iaProfile;
+  const profileLine = profile
+    ? `<div class="google-profile">
+        <div class="google-avatar placeholder">${(profile.emblem && profile.emblem[0] && profile.emblem[0].emoji) || "🧪"}</div>
+        <div class="google-info">
+          <div class="google-name">${esc(profile.workshopName || "工坊")}</div>
+          <div class="google-email">${profile.displayTitle ? esc(`${profile.displayTitle.emoji || ""} ${profile.displayTitle.name || ""}`) : ""}</div>
+        </div>
+      </div>`
+    : "";
+
+  const invRows = S.iaInventory.map((it) => `
+    <label class="ia-item-row">
+      <input type="checkbox" data-act="ia-toggle" data-id="${esc(it.id)}" ${S.iaSelected[it.id] ? "checked" : ""} />
+      ${it.manifestationUrl && String(it.manifestationUrl).startsWith("https:")
+        ? `<img class="ia-item-art" src="${esc(it.manifestationUrl)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';" /><span class="ia-item-emoji" style="display:none">${esc(it.emoji || "📦")}</span>`
+        : `<span class="ia-item-emoji">${esc(it.emoji || "📦")}</span>`}
+      <span class="ia-item-name">${esc(it.name)}</span>
+    </label>`).join("");
+
+  return `
+  <div class="modal-section">
+    <div class="modal-section-title">🔗 連接 Infinite Alchemy 帳號（匯入造物）</div>
+    ${disclaimer}
+    ${profileLine}
+    <div class="modal-hint">勾選要匯入的造物，按下面的按鈕加進目前遊戲的背包。已經存在同名造物的不會重複匯入。</div>
+    <div class="ia-item-grid">
+      ${invRows || `<div class="inv-empty">${S.iaBusy ? "讀取中…" : "這個帳號目前沒有造物，或還沒讀取。"}</div>`}
+    </div>
+    <div class="save-actions" style="margin-top:10px">
+      <button class="btn ghost small" id="iaRefreshBtn" ${S.iaBusy ? "disabled" : ""}>${S.iaBusy ? "讀取中…" : "🔄 重新整理清單"}</button>
+      <button class="btn primary small" id="iaImportBtn" ${S.iaBusy ? "disabled" : ""}>⬇️ 匯入已勾選造物</button>
+      <button class="btn danger small" id="iaDisconnectBtn">中斷連接</button>
+    </div>
+    ${msg}
+    ${adminBlock}
   </div>`;
 }
 
@@ -1545,6 +1910,21 @@ function bindModalEvents() {
   const cloudSignOutBtn = document.getElementById("cloudSignOutBtn");
   if (cloudSignOutBtn) cloudSignOutBtn.onclick = () => signOutGoogle();
 
+  // Infinite Alchemy
+  const iaConnectBtn = document.getElementById("iaConnectBtn");
+  if (iaConnectBtn) iaConnectBtn.onclick = () => iaConnect();
+  const iaRefreshBtn = document.getElementById("iaRefreshBtn");
+  if (iaRefreshBtn) iaRefreshBtn.onclick = () => iaRefreshProfileAndInventory();
+  const iaImportBtn = document.getElementById("iaImportBtn");
+  if (iaImportBtn) iaImportBtn.onclick = () => iaImportSelected();
+  const iaDisconnectBtn = document.getElementById("iaDisconnectBtn");
+  if (iaDisconnectBtn) iaDisconnectBtn.onclick = () => iaDisconnect();
+  document.querySelectorAll('[data-act="ia-toggle"]').forEach((cb) => {
+    cb.onchange = () => iaToggleSelect(cb.dataset.id);
+  });
+  const iaUpdateRedirectBtn = document.getElementById("iaUpdateRedirectBtn");
+  if (iaUpdateRedirectBtn) iaUpdateRedirectBtn.onclick = () => iaUpdateRedirectUri();
+
   // novel modal
   const genNovelBtn = document.getElementById("genNovelBtn");
   if (genNovelBtn) genNovelBtn.onclick = () => generateNovel();
@@ -1571,3 +1951,4 @@ window.addEventListener("cloud-auth-changed", (e) => {
 
 // ---------- init ----------
 render();
+iaHandleCallbackOnLoad();

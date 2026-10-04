@@ -44,10 +44,10 @@
 */
 
 window.FIREBASE_CONFIG = {
-  apiKey: "AIzaSyDgw-stb4gQxbdV86SpUFbWTBDhGwBpMCs",
-  authDomain: "infinite-story-1bc1d.firebaseapp.com",
-  projectId: "infinite-story-1bc1d",
-  storageBucket: "infinite-story-1bc1d.firebasestorage.app",
-  messagingSenderId: "995298604571",
-  appId: "1:995298604571:web:e59849b0aa5d7d5cb86abe",
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID",
 };

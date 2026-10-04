@@ -9,11 +9,15 @@ import {
 import {
   getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import {
+  getFunctions, httpsCallable,
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
 let app = null;
 let db = null;
 let auth = null;
 let provider = null;
+let functionsInstance = null;
 
 function isConfigured() {
   const cfg = window.FIREBASE_CONFIG;
@@ -39,6 +43,7 @@ function ensureApp() {
     app = initializeApp(window.FIREBASE_CONFIG);
     db = getFirestore(app);
     auth = getAuth(app);
+    functionsInstance = getFunctions(app);
     provider = new GoogleAuthProvider();
 
     // Tell app.js (a plain classic script, loaded separately from this
@@ -77,6 +82,20 @@ window.CloudSave = {
     if (!uid) throw new Error("尚未登入 Google 帳號。");
     const snap = await getDoc(doc(db, "saves", uid));
     return snap.exists() ? snap.data() : null;
+  },
+};
+
+// Thin wrapper around the one callable Cloud Function this project ships
+// (functions/index.js: updateRedirectUri). The backend itself re-checks
+// that the signed-in uid is the configured OWNER_UID — this client just
+// surfaces a friendlier error if someone who isn't signed in tries it.
+window.CloudFunctions = {
+  async updateInfiniteAlchemyRedirectUri(redirectUri) {
+    ensureApp();
+    if (!(auth.currentUser)) throw new Error("請先用 Google 帳號登入。");
+    const call = httpsCallable(functionsInstance, "updateRedirectUri");
+    const result = await call({ redirect_uri: redirectUri });
+    return result.data;
   },
 };
 
