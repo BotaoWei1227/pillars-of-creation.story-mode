@@ -979,16 +979,22 @@ function render() {
   if (S.stage === "playing" && S.tab === "story") scrollLogToLastUser();
 }
 
-// Keep the player's own last message pinned near the top of the log (like a
-// chat app), instead of jumping to the very bottom of a long AI reply —
-// otherwise the player has to scroll back up to read the reply from the top.
+// Keep the player's own last message pinned at the BOTTOM of the visible
+// log, the moment they send it — like a normal chat app. New content (the
+// AI's reply) then appends below that and stays hidden under the fold；
+// since render() recreates the whole DOM (innerHTML swap destroys .log and
+// rebuilds it), nothing above the last user message ever shifts between the
+// "just sent" render and the "reply arrived" render, so recomputing this on
+// every render keeps the view anchored in the same spot both times — the
+// player has to scroll down themselves to reveal the new reply, rather than
+// the app jumping to show it for them.
 //
 // Note: this deliberately uses getBoundingClientRect() rather than
 // .offsetTop. .offsetTop is measured relative to the nearest *positioned*
 // ancestor, which here is <body> (not .log) — so comparing it against
-// log.scrollTop directly is wrong and effectively dumps the view near the
-// bottom. getBoundingClientRect() is always viewport-relative regardless of
-// the positioning chain, so the delta between the two rects is reliable.
+// log.scrollTop directly is wrong. getBoundingClientRect() is always
+// viewport-relative regardless of the positioning chain, so the delta
+// between the two rects is reliable.
 function scrollLogToLastUser() {
   const log = document.querySelector(".log");
   if (!log) return;
@@ -997,8 +1003,8 @@ function scrollLogToLastUser() {
   if (!last) { log.scrollTop = log.scrollHeight; return; }
   const logRect = log.getBoundingClientRect();
   const lastRect = last.getBoundingClientRect();
-  const delta = lastRect.top - logRect.top;
-  log.scrollTop = Math.max(0, log.scrollTop + delta - 6);
+  const delta = lastRect.bottom - logRect.bottom;
+  log.scrollTop = Math.max(0, log.scrollTop + delta);
 }
 
 function renderIntro() {
