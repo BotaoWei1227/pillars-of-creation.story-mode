@@ -897,6 +897,8 @@ const S = {
   iaProfile: null, // { id, workshopName, emblem, displayTitle } | null
   iaInventory: [], // raw items from GET /developer-api/v1/inventory
   iaSelected: {}, // { [item.id]: true } — which fetched items are checked for import
+  iaQuery: "", // search text — only matching items are shown/importable, nothing is pre-selected
+  iaSearchFocused: false,
   iaBusy: false,
   iaMsg: null, // { type: "ok" | "bad", text }
 };
@@ -978,10 +980,11 @@ async function iaRefreshProfileAndInventory() {
   try {
     S.iaProfile = await window.IAOAuth.getProfile();
     S.iaInventory = await window.IAOAuth.fetchInventory();
-    // default: everything freshly fetched starts selected for import
-    const sel = {};
-    for (const it of S.iaInventory) sel[it.id] = true;
-    S.iaSelected = sel;
+    // Nothing is pre-selected — the player searches their own list and
+    // explicitly picks what to import, rather than everything being staged
+    // for transfer by default.
+    S.iaSelected = {};
+    S.iaQuery = "";
   } catch (e) {
     if (e && e.code === "invalid_token") { S.iaProfile = null; S.iaInventory = []; }
     S.iaMsg = { type: "bad", text: iaFriendlyError(e) };
@@ -1677,7 +1680,13 @@ function renderInfiniteAlchemySection() {
       </div>`
     : "";
 
-  const invRows = S.iaInventory.map((it) => `
+  const query = S.iaQuery.trim().toLowerCase();
+  const filtered = query
+    ? S.iaInventory.filter((it) => (it.name || "").toLowerCase().includes(query))
+    : [];
+  const selectedCount = Object.values(S.iaSelected).filter(Boolean).length;
+
+  const invRows = filtered.map((it) => `
     <label class="ia-item-row">
       <input type="checkbox" data-act="ia-toggle" data-id="${esc(it.id)}" ${S.iaSelected[it.id] ? "checked" : ""} />
       ${it.manifestationUrl && String(it.manifestationUrl).startsWith("https:")
@@ -1686,18 +1695,28 @@ function renderInfiniteAlchemySection() {
       <span class="ia-item-name">${esc(it.name)}</span>
     </label>`).join("");
 
+  let listBlock;
+  if (!S.iaInventory.length) {
+    listBlock = `<div class="inv-empty">${S.iaBusy ? "讀取中…" : "這個帳號目前沒有造物，或還沒讀取。"}</div>`;
+  } else if (!query) {
+    listBlock = `<div class="inv-empty">你在 Infinite Alchemy 裡有 ${S.iaInventory.length} 件造物——輸入關鍵字搜尋，找到想匯入的再勾選。</div>`;
+  } else {
+    listBlock = invRows || `<div class="inv-empty">沒有造物名稱符合「${esc(S.iaQuery)}」。</div>`;
+  }
+
   return `
   <div class="modal-section">
     <div class="modal-section-title">🔗 連接 Infinite Alchemy 帳號（匯入造物）</div>
     ${disclaimer}
     ${profileLine}
-    <div class="modal-hint">勾選要匯入的造物，按下面的按鈕加進目前遊戲的背包。已經存在同名造物的不會重複匯入。</div>
+    <div class="modal-hint">搜尋你自己擁有的造物，勾選想要的再匯入，不會一次整批帶進來。已經存在同名造物的不會重複匯入。</div>
+    <input class="tbsearch" id="iaSearchInput" style="margin-bottom:8px" placeholder="🔍 搜尋你擁有的造物..." value="${esc(S.iaQuery)}" />
     <div class="ia-item-grid">
-      ${invRows || `<div class="inv-empty">${S.iaBusy ? "讀取中…" : "這個帳號目前沒有造物，或還沒讀取。"}</div>`}
+      ${listBlock}
     </div>
     <div class="save-actions" style="margin-top:10px">
       <button class="btn ghost small" id="iaRefreshBtn" ${S.iaBusy ? "disabled" : ""}>${S.iaBusy ? "讀取中…" : "🔄 重新整理清單"}</button>
-      <button class="btn primary small" id="iaImportBtn" ${S.iaBusy ? "disabled" : ""}>⬇️ 匯入已勾選造物</button>
+      <button class="btn primary small" id="iaImportBtn" ${S.iaBusy || !selectedCount ? "disabled" : ""}>⬇️ 匯入已勾選造物（${selectedCount}）</button>
       <button class="btn danger small" id="iaDisconnectBtn">中斷連接</button>
     </div>
     ${msg}
@@ -1922,6 +1941,16 @@ function bindModalEvents() {
   document.querySelectorAll('[data-act="ia-toggle"]').forEach((cb) => {
     cb.onchange = () => iaToggleSelect(cb.dataset.id);
   });
+  const iaSearchInput = document.getElementById("iaSearchInput");
+  if (iaSearchInput) {
+    iaSearchInput.oninput = (e) => { S.iaQuery = e.target.value; render(); };
+    iaSearchInput.onfocus = () => { S.iaSearchFocused = true; };
+    iaSearchInput.onblur = () => { S.iaSearchFocused = false; };
+    if (S.iaSearchFocused) {
+      iaSearchInput.focus();
+      iaSearchInput.setSelectionRange(iaSearchInput.value.length, iaSearchInput.value.length);
+    }
+  }
   const iaUpdateRedirectBtn = document.getElementById("iaUpdateRedirectBtn");
   if (iaUpdateRedirectBtn) iaUpdateRedirectBtn.onclick = () => iaUpdateRedirectUri();
 

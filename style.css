@@ -35,13 +35,19 @@ body {
 .hdr { text-align: center; margin-bottom: 14px; padding-top: 4px; position: relative; }
 .hdr-title {
   font-family: 'Cinzel', 'Noto Serif TC', serif;
-  font-size: 30px; font-weight: 700; letter-spacing: 3px; color: var(--brass-light);
+  font-size: 23px; font-weight: 700; letter-spacing: 2px; color: var(--brass-light);
   text-shadow: 0 0 16px rgba(201,151,76,0.45);
-  display: flex; align-items: center; justify-content: center; gap: 10px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  flex-wrap: wrap;
 }
 .hdr-gear { display: inline-block; color: var(--copper); animation: spin 9s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-.hdr-sub { font-family: 'Cinzel', serif; color: var(--ink-dim); letter-spacing: 2px; font-size: 10.5px; margin-top: 5px; }
+.hdr-unofficial {
+  display: inline-block; margin-top: 8px; font-family: 'Noto Serif TC', serif;
+  font-size: 11.5px; font-weight: 700; color: #ffcf8a; background: rgba(194,92,66,0.18);
+  border: 1px solid var(--danger); border-radius: 20px; padding: 4px 12px; letter-spacing: 0.5px;
+}
+.hdr-sub { font-family: 'Cinzel', serif; color: var(--ink-dim); letter-spacing: 2px; font-size: 10.5px; margin-top: 6px; }
 .hdr-actions {
   position: absolute; right: 0; top: 2px; display: flex; gap: 8px;
 }
@@ -179,7 +185,7 @@ body {
 .inputbar input:focus { border-color: var(--brass); }
 .inputbar .btn { width: auto; padding: 12px 20px; }
 
-.tab-craft { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; padding-right: 2px; }
+.tab-craft { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 .craft-slots { display: flex; align-items: center; gap: 10px; }
 .slot { flex: 1; min-height: 58px; border: 2px dashed var(--line); border-radius: 8px; background: var(--bg-panel-2); color: var(--ink-dim); font-family: 'Cinzel', serif; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px; }
 .slot.filled { border-style: solid; border-color: var(--brass); background: linear-gradient(180deg, #2a1d10, #1c140c); color: var(--brass-light); }
@@ -191,7 +197,7 @@ body {
 .tbtn.active { border-color: var(--magic); color: var(--magic-glow); }
 .tbsearch { flex: 1; min-width: 120px; background: var(--bg-deep); border: 1px solid var(--line); color: var(--ink); padding: 8px 10px; border-radius: 5px; font-size: 12.5px; outline: none; font-family: 'Noto Serif TC', serif; }
 .tbsearch:focus { border-color: var(--brass); }
-.craft-grid { display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; }
+.craft-grid { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 8px; padding-right: 2px; }
 .pill { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 20px; background: var(--bg-panel-2); border: 1.5px solid var(--line); color: var(--ink); cursor: pointer; font-size: 12.5px; font-family: 'Noto Serif TC', serif; }
 .pill:hover:not(.disabled) { filter: brightness(1.2); }
 .pill.disabled { opacity: 0.3; cursor: not-allowed; }
@@ -200,7 +206,7 @@ body {
 .pill-emoji { font-size: 15px; }
 .pill-art { width: 17px; height: 17px; object-fit: contain; border-radius: 3px; }
 .pill-count { font-family: 'Cinzel', serif; font-size: 10.5px; color: var(--brass); background: var(--bg-deep); padding: 1px 6px; border-radius: 8px; }
-.craft-footer { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.craft-footer { flex-shrink: 0; padding-top: 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
 .mana-row { display: flex; align-items: center; gap: 8px; }
 .mana-label { font-family: 'Cinzel', serif; font-size: 10.5px; color: var(--magic-glow); white-space: nowrap; }
 .mana-track { flex: 1; height: 8px; background: var(--bg-deep); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
