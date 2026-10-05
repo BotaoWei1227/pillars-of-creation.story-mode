@@ -30,6 +30,7 @@ const CORE_PROMPT = `
   "effects": [],
   "lastRoll": null,
   "suggestions": ["<這裡填根據這一回合劇情現場想出的建議1>", "<方向要跟建議1不同的建議2>", "<方向要跟前兩個都不同的建議3>"],
+  "ending": null,
   "craftOutcome": null,
   "inventoryChange": {
     "itemsGained": [],
@@ -62,6 +63,15 @@ const CORE_PROMPT = `
   （例如「繼續探索」「跟村民聊天」這種沒有具體對象或地點的廢話）。
   如果你發現自己正要寫出跟上一輪一模一樣的句子，代表你沒有真的根據
   當下劇情去想，請重新想三個具體、有畫面、跟這段文字直接相關的建議。
+- ending：整個遊戲只有「第十章〈終焉一擊〉的最終決戰真正落幕、分支結局
+  已經定案」的那一回合才需要填這個欄位，其他所有回合（包含整個第十章
+  戰鬥進行中、還沒塵埃落定之前）一律填 null。結局真正揭曉的那一回合，
+  填入 {"title":"結局的簡短標題（約6~14字，例如「與將軍和解的黎明」）",
+  "summary":"2~4句話總結這個結局，呼應玩家這趟旅程的選擇、好感度與
+  屬性走向，繁體中文，不要用條列式"}。一旦填了這個欄位，代表故事正式
+  結束，之後不會再有下一回合，所以劇情文字也要把這一回合直接寫成完整的
+  結局收尾（不是半途而廢），不需要再給suggestions（這種情況suggestions
+  給空陣列[]即可）。
 
 【重要：背包／元素的回報方式，禁止回傳完整清單】
 這個版本不再要你每回合回報完整的 items/elements 清單——完整清單改由
@@ -328,7 +338,12 @@ Gentle Larry調校蒸氣系統、萬象與夜夜貢獻妖力、白文鳥找傳�
 過關斬將。`,
   10: `第十章〈終焉一擊〉：抵達將軍總部，展開最終決戰，擊敗金將軍，恢復和平。
 結局依玩家的選擇、好感度、屬性走向產生不同分支（感化他、擊敗他、
-說服他放下野心等），不用單一固定結局。`,
+說服他放下野心等），不用單一固定結局。決戰過程可以照常分成好幾回合
+慢慢推進（潛入、對峙、交手、轉折），不用急著一回合結束。只有當分支
+真正定案、故事確定要收尾的那一回合，才在state JSON填入ending欄位，
+並把那一回合的劇情文字直接寫成完整的結局段落（呼應玩家這趟旅程的
+選擇、好感度走向、有沒有伴侶等），給玩家一個有份量的收尾，而不是
+草草帶過。`,
 };
 
 const CHAPTER_SUMMARY_LINES = [
@@ -466,6 +481,7 @@ const DEFAULT_STATE = {
   effects: [],
   lastRoll: null,
   suggestions: [],
+  ending: null, // { title, summary } once chapter 10's finale resolves — triggers the results screen
 };
 
 // ---------- persistent storage ----------
@@ -926,18 +942,18 @@ async function iaHandleCallbackOnLoad() {
   try {
     const result = await window.IAOAuth.handleCallbackIfPresent();
     if (result === "connected") {
-      S.modal = "settings";
+      S.modal = "ia";
       S.iaMsg = { type: "ok", text: "已連接 Infinite Alchemy 帳號！" };
       await iaRefreshProfileAndInventory();
     } else if (result === "denied") {
-      S.modal = "settings";
+      S.modal = "ia";
       S.iaMsg = { type: "bad", text: "你拒絕了授權，所以沒有連接成功。" };
     } else if (result === "state_mismatch") {
-      S.modal = "settings";
+      S.modal = "ia";
       S.iaMsg = { type: "bad", text: "授權驗證失敗（state 不符），請重新嘗試一次登入。" };
     }
   } catch (e) {
-    S.modal = "settings";
+    S.modal = "ia";
     S.iaMsg = { type: "bad", text: "連接失敗：" + (e.message || e) };
   } finally {
     render();
@@ -1011,7 +1027,7 @@ async function iaUpdateRedirectUri() {
     return;
   }
   if (!S.cloudUser) {
-    S.iaMsg = { type: "bad", text: "請先在上面的「☁️ 雲端存檔」用 Google 帳號登入（必須是專案擁有者的帳號）。" };
+    S.iaMsg = { type: "bad", text: "請先到 ⚙️ 設定裡的「☁️ 雲端存檔」用 Google 帳號登入（必須是專案擁有者的帳號）。" };
     render();
     return;
   }
@@ -1163,6 +1179,44 @@ function applyReply(rawText, historyBeforeReply) {
   const text = narrative || rawText;
   S.messages = [...historyBeforeReply, { role: "assistant", content: text, display: text }];
   persistSave();
+
+  if (S.gameState.ending && S.gameState.ending.title) {
+    onGameEnded();
+  }
+}
+
+// ---------- ending / New Game+ ----------
+const LS_COMPLETIONS = "ic_completions";
+const LS_BONUS_POINTS = "ic_bonus_points";
+const BONUS_PER_COMPLETION = 5;
+const BONUS_CAP = 25; // keep stat totals from spiraling into dice-math-breaking territory
+
+function getCompletions() { return parseInt(localStorage.getItem(LS_COMPLETIONS) || "0", 10) || 0; }
+function getBonusPoints() { return Math.min(BONUS_CAP, parseInt(localStorage.getItem(LS_BONUS_POINTS) || "0", 10) || 0); }
+
+function onGameEnded() {
+  const completions = getCompletions() + 1;
+  const bonus = Math.min(BONUS_CAP, getBonusPoints() + BONUS_PER_COMPLETION);
+  localStorage.setItem(LS_COMPLETIONS, String(completions));
+  localStorage.setItem(LS_BONUS_POINTS, String(bonus));
+  S.stage = "ending";
+  persistSave();
+  render();
+}
+
+function startNewGamePlus() {
+  localStorage.removeItem(LS_SAVE);
+  const bonus = getBonusPoints();
+  S.stage = "intro";
+  S.heroName = "艾利亞";
+  S.points = { str: 10, agi: 10, int: 10, cha: 10, con: 10 };
+  S.remaining = 10 + bonus;
+  S.messages = [];
+  S.gameState = { ...DEFAULT_STATE };
+  S.tab = "story";
+  S.craftResult = null;
+  S.pendingCraft = null;
+  render();
 }
 
 async function beginGame() {
@@ -1258,6 +1312,7 @@ function render() {
   const app = document.getElementById("app");
   if (S.stage === "intro") app.innerHTML = renderIntro();
   else if (S.stage === "alloc") app.innerHTML = renderAlloc();
+  else if (S.stage === "ending") app.innerHTML = renderEnding();
   else app.innerHTML = renderGame();
   renderModal();
   bindEvents();
@@ -1319,14 +1374,76 @@ function renderAlloc() {
         <button class="pm" data-act="pm" data-key="${s.key}" data-delta="1" ${S.remaining <= 0 || S.points[s.key] >= 30 ? "disabled" : ""}>＋</button>
       </div>
     </div>`).join("");
+  const completions = getCompletions();
+  const bonus = getBonusPoints();
+  const bonusNote = completions > 0
+    ? `<div class="bonus-note">✨ 你已經完成過 ${completions} 次冒險，本次額外獲得 ${bonus} 點自由點數（已包含在下方點數內）</div>`
+    : "";
   return `
   <div class="card">
+    ${bonusNote}
     <div class="alloc-head"><span>剩餘自由點數</span><span class="remaining">${S.remaining}</span></div>
     <div class="stat-list">${rows}</div>
     <div class="hp-preview">預估初始 HP：${S.points.con * 5}</div>
     <button class="btn primary" id="beginBtn" ${S.remaining !== 0 ? "disabled" : ""}>
       ${S.remaining === 0 ? "確認分配，進入無限煉製村 →" : `還剩 ${S.remaining} 點未分配`}
     </button>
+  </div>`;
+}
+
+function renderEnding() {
+  const st = S.gameState;
+  const ending = st.ending || { title: "旅途告一段落", summary: "" };
+  const turnsPlayed = S.messages.filter((m) => m.role === "user").length;
+  const itemCount = (st.items || []).length;
+  const topFavor = [...(st.favorability || [])].sort((a, b) => b.value - a.value).slice(0, 5);
+  const completions = getCompletions();
+  const bonus = getBonusPoints();
+
+  const favBlock = topFavor.length
+    ? `<div class="fav-list">${topFavor.map((f) => `
+        <div class="fav-row"><span class="fav-name">${esc(f.name)}</span>
+          <div class="fav-bar"><div class="fav-fill" style="width:${Math.min(100, f.value)}%"></div></div>
+          <span class="fav-val">${f.value}</span></div>`).join("")}</div>`
+    : `<div class="inv-empty">沒有特別建立起好感度。</div>`;
+
+  return `
+  <div class="card ending-card">
+    <div class="ending-badge">✨ 冒險結束 ✨</div>
+    <h2 class="ending-title">${esc(ending.title)}</h2>
+    ${ending.summary ? `<p class="lead ending-summary">${esc(ending.summary)}</p>` : ""}
+
+    <div class="ending-stats">
+      <div class="ending-stat"><span class="es-val">${esc(st.chapter || "")}</span><span class="es-label">抵達章節</span></div>
+      <div class="ending-stat"><span class="es-val">${turnsPlayed}</span><span class="es-label">行動回合數</span></div>
+      <div class="ending-stat"><span class="es-val">${itemCount}</span><span class="es-label">擁有造物</span></div>
+      <div class="ending-stat"><span class="es-val">${st.hp}/${st.maxHp}</span><span class="es-label">最終HP</span></div>
+    </div>
+
+    ${st.companion ? `
+      <div class="status-block" style="margin-bottom:14px">
+        <div class="block-title">羈絆</div>
+        <div class="companion-card">
+          <div class="companion-emoji">💞</div>
+          <div class="companion-name">${esc(st.companion.name)}</div>
+          <div class="fav-val">好感度 ${st.companion.value} / 100</div>
+        </div>
+      </div>` : ""}
+
+    <div class="status-block" style="margin-bottom:18px">
+      <div class="block-title">好感度最高的夥伴</div>
+      ${favBlock}
+    </div>
+
+    <div class="bonus-note">
+      ✨ 完成這趟冒險獲得 ${BONUS_PER_COMPLETION} 點自由點數！這是你第 ${completions} 次完成冒險，
+      下一輪開局會多出 ${bonus} 點可以分配（上限 ${BONUS_CAP} 點）。
+    </div>
+
+    <div class="ending-actions">
+      <button class="btn ghost" id="endingNovelBtn">📖 生成故事紀錄</button>
+      <button class="btn primary" id="newGamePlusBtn">🔄 開始新局（New Game+）→</button>
+    </div>
   </div>`;
 }
 
@@ -1559,6 +1676,7 @@ function travelTo(locId) {
 function renderModal() {
   const root = document.getElementById("modalRoot");
   if (S.modal === "novel") { root.innerHTML = renderNovelModal(); return; }
+  if (S.modal === "ia") { root.innerHTML = renderIaModal(); return; }
   if (S.modal !== "settings") { root.innerHTML = ""; return; }
   const key = getApiKey();
   const masked = key ? key.slice(0, 4) + "••••••••" + key.slice(-4) : "";
@@ -1611,6 +1729,15 @@ function renderModal() {
       </div>
 
       ${renderCloudSection()}
+    </div>
+  </div>`;
+}
+
+function renderIaModal() {
+  return `
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal" id="modalBox">
+      <div class="modal-head"><span>🔗 Infinite Alchemy</span><button class="modal-close" id="modalCloseBtn">✕</button></div>
       ${renderInfiniteAlchemySection()}
     </div>
   </div>`;
@@ -1628,8 +1755,9 @@ function renderInfiniteAlchemySection() {
     <div class="ia-admin-block">
       <div class="modal-section-title" style="margin-top:14px">⚠️ 管理者專用：更新 Redirect URI</div>
       <div class="modal-hint">
-        部署到新網址後，用專案擁有者的 Google 帳號在上面「☁️ 雲端存檔」登入，
-        再按下面按鈕，會透過後端 Cloud Function（持有 Server Secret）把
+        部署到新網址後，先到 ⚙️ 設定裡的「☁️ 雲端存檔」用專案擁有者的 Google
+        帳號登入，回到這裡再按下面按鈕，會透過後端 Cloud Function（持有
+        Server Secret）把
         <code>${esc((window.INFINITE_ALCHEMY_CONFIG && window.INFINITE_ALCHEMY_CONFIG.redirectUri) || "")}</code>
         設成 Infinite Alchemy 這個應用程式的 Redirect URI。一般玩家按這顆按鈕
         會被後端拒絕，不影響其他人。
@@ -1644,7 +1772,6 @@ function renderInfiniteAlchemySection() {
   if (!configured) {
     return `
     <div class="modal-section">
-      <div class="modal-section-title">🔗 連接 Infinite Alchemy 帳號（匯入造物）</div>
       ${disclaimer}
       <div class="modal-hint">
         這個功能需要先到 Infinite Alchemy Developer Platform 申請一個應用程式，
@@ -1658,7 +1785,6 @@ function renderInfiniteAlchemySection() {
   if (!connected) {
     return `
     <div class="modal-section">
-      <div class="modal-section-title">🔗 連接 Infinite Alchemy 帳號（匯入造物）</div>
       ${disclaimer}
       <div class="modal-hint">登入後可以把你在 Infinite Alchemy 裡實際擁有的造物匯入這個遊戲的背包。只會讀取公開的基本資料與造物清單，不會讀取好友、交易或任何帳號機密資訊。</div>
       <div class="save-actions" style="margin-top:8px">
@@ -1706,7 +1832,6 @@ function renderInfiniteAlchemySection() {
 
   return `
   <div class="modal-section">
-    <div class="modal-section-title">🔗 連接 Infinite Alchemy 帳號（匯入造物）</div>
     ${disclaimer}
     ${profileLine}
     <div class="modal-hint">搜尋你自己擁有的造物，勾選想要的再匯入，不會一次整批帶進來。已經存在同名造物的不會重複匯入。</div>
@@ -1798,6 +1923,16 @@ function bindEvents() {
   });
   const beginBtn = document.getElementById("beginBtn");
   if (beginBtn) beginBtn.onclick = () => beginGame();
+  const newGamePlusBtn = document.getElementById("newGamePlusBtn");
+  if (newGamePlusBtn) newGamePlusBtn.onclick = () => startNewGamePlus();
+  const endingNovelBtn = document.getElementById("endingNovelBtn");
+  if (endingNovelBtn) {
+    endingNovelBtn.onclick = () => {
+      S.modal = "novel";
+      render();
+      if (!S.novelText && !S.novelBusy) generateNovel();
+    };
+  }
 
   // tabs
   document.querySelectorAll(".tabbtn").forEach((btn) => {
@@ -1871,6 +2006,8 @@ function bindEvents() {
   // header icon buttons
   const settingsFab = document.getElementById("settingsFab");
   if (settingsFab) settingsFab.onclick = () => { S.modal = "settings"; render(); };
+  const iaFab = document.getElementById("iaFab");
+  if (iaFab) iaFab.onclick = () => { S.modal = "ia"; render(); };
   const novelFab = document.getElementById("novelFab");
   if (novelFab) novelFab.onclick = () => { S.modal = "novel"; render(); };
   const fullscreenFab = document.getElementById("fullscreenFab");

@@ -32,10 +32,10 @@ body {
 }
 .vignette { pointer-events: none; position: fixed; inset: 0; z-index: 40; box-shadow: inset 0 0 140px rgba(0,0,0,0.65); }
 
-.hdr { text-align: center; margin-bottom: 14px; padding-top: 4px; position: relative; }
+.hdr { text-align: center; margin-bottom: 14px; padding-top: 4px; }
 .hdr-title {
   font-family: 'Cinzel', 'Noto Serif TC', serif;
-  font-size: 23px; font-weight: 700; letter-spacing: 2px; color: var(--brass-light);
+  font-size: 22px; font-weight: 700; letter-spacing: 2px; color: var(--brass-light);
   text-shadow: 0 0 16px rgba(201,151,76,0.45);
   display: flex; align-items: center; justify-content: center; gap: 8px;
   flex-wrap: wrap;
@@ -49,7 +49,7 @@ body {
 }
 .hdr-sub { font-family: 'Cinzel', serif; color: var(--ink-dim); letter-spacing: 2px; font-size: 10.5px; margin-top: 6px; }
 .hdr-actions {
-  position: absolute; right: 0; top: 2px; display: flex; gap: 8px;
+  display: flex; gap: 8px; justify-content: center; margin-bottom: 10px;
 }
 .icon-fab {
   width: 36px; height: 36px; border-radius: 50%;
@@ -247,6 +247,32 @@ body {
 .ia-item-art { width: 22px; height: 22px; object-fit: contain; border-radius: 3px; flex-shrink: 0; }
 .ia-item-emoji { font-size: 16px; flex-shrink: 0; }
 .ia-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ending-card { max-width: 560px; }
+.ending-badge {
+  text-align: center; font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 2px;
+  color: var(--magic-glow); margin-bottom: 10px;
+}
+.ending-title {
+  text-align: center; font-family: 'Noto Serif TC', serif; font-size: 24px; font-weight: 900;
+  color: var(--brass-light); text-shadow: 0 0 16px rgba(201,151,76,0.4); margin: 0 0 14px;
+}
+.ending-summary { text-align: center; margin-bottom: 20px; }
+.ending-stats {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 18px;
+}
+.ending-stat {
+  background: var(--bg-deep); border: 1px solid var(--line); border-radius: 6px;
+  padding: 12px 8px; text-align: center; display: flex; flex-direction: column; gap: 4px;
+}
+.es-val { font-family: 'Cinzel', serif; font-size: 16px; color: var(--brass-light); overflow-wrap: break-word; }
+.es-label { font-size: 10.5px; color: var(--ink-dim); }
+.bonus-note {
+  font-size: 12px; line-height: 1.8; color: var(--magic-glow); background: rgba(139,95,191,0.1);
+  border: 1px solid var(--magic); border-radius: 5px; padding: 10px 12px; margin-bottom: 16px;
+}
+.ending-actions { display: flex; flex-direction: column; gap: 10px; }
+.ending-actions .btn.ghost { width: 100%; }
 
 .companion-card { text-align: center; padding: 4px; }
 .companion-emoji { font-size: 36px; }
