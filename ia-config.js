@@ -22,7 +22,7 @@
 
 window.INFINITE_ALCHEMY_CONFIG = {
   baseUrl: "https://pillars-of-creation.funtuan.work/",
-  clientId: "ia_DkgDHbWodg043UgSU0HfoegU",
+  clientId: "ia_DkgDHbWodgO43UgSUOHfoegU",
   // Exact redirect URI this app will present during OAuth. Defaults to the
   // page's own deployed URL (origin + path, no query/hash) so it auto-matches
   // wherever you actually host it (localhost while developing, GitHub Pages
