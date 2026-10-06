@@ -143,6 +143,9 @@ body {
 .hp-preview { margin-top: 16px; margin-bottom: 18px; text-align: center; font-family: 'Cinzel', serif; color: var(--danger); font-size: 12.5px; letter-spacing: 1px; }
 
 .game { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; height: calc(100vh - 108px); }
+.game.reading-mode .topstrip,
+.game.reading-mode .roll-toast,
+.game.reading-mode .tabbar { display: none; }
 .topstrip { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--bg-panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; flex-wrap: wrap; }
 .topstrip-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ts-chapter { font-family: 'Cinzel', serif; font-size: 9.5px; color: var(--ink-dim); letter-spacing: 1px; }
@@ -162,6 +165,7 @@ body {
 .tab-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 .tab-story { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.story-toolbar { display: flex; justify-content: flex-end; margin-bottom: 4px; }
 .log { flex: 1; overflow-y: auto; padding: 4px 4px 12px; display: flex; flex-direction: column; gap: 10px; }
 .story-block { line-height: 2; font-size: 14.5px; color: var(--ink); margin: 0 0 10px; white-space: pre-wrap; }
 .panel-block { font-family: 'Cinzel', serif; font-size: 11.5px; line-height: 1.7; color: var(--success); background: var(--bg-deep); border: 1px solid #2e3f24; border-left: 3px solid var(--success); padding: 12px 14px; border-radius: 4px; white-space: pre-wrap; overflow-x: auto; margin: 0 0 10px; }
@@ -169,6 +173,13 @@ body {
 .msg.user { display: flex; }
 .loading, .errmsg { font-family: 'Cinzel', serif; font-size: 11px; color: var(--ink-dim); padding: 6px 2px; }
 .errmsg { color: var(--danger); white-space: pre-wrap; }
+.suggest-wrap { margin: 4px 0 2px; }
+.suggest-header {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  background: none; border: none; color: var(--ink-dim); font-family: 'Cinzel', serif;
+  font-size: 10.5px; letter-spacing: 1px; padding: 4px 2px; cursor: pointer;
+}
+.suggest-chevron { color: var(--magic-glow); }
 .suggest-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
 .suggest-chip {
   padding: 7px 12px; border-radius: 16px; background: var(--bg-panel-2);

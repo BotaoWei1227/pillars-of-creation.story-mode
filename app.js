@@ -894,6 +894,8 @@ const S = {
   loading: false,
   error: null,
   tab: "story", // story | craft | status | map
+  readingMode: false, // hides topstrip/roll-toast/tabbar so the log can take the full screen
+  suggestionsCollapsed: false,
   modal: null, // null | "settings" | "novel"
   craftSlotA: null,
   craftSlotB: null,
@@ -1448,8 +1450,9 @@ function renderEnding() {
 }
 
 function renderGame() {
+  const reading = S.readingMode && S.tab === "story";
   return `
-  <div class="game">
+  <div class="game ${reading ? "reading-mode" : ""}">
     ${renderTopStrip()}
     ${renderRollToast()}
     <div class="tabbar">
@@ -1503,6 +1506,9 @@ function renderStory() {
   }).join("");
   return `
   <div class="tab-story">
+    <div class="story-toolbar">
+      <button class="tbtn" id="readingModeBtn">${S.readingMode ? "↙️ 退出放大閱讀" : "↗️ 放大閱讀"}</button>
+    </div>
     <div class="log">
       ${msgs}
       ${S.loading ? `<div class="loading">爐火明滅，敘事者正在低語…</div>` : ""}
@@ -1523,8 +1529,14 @@ function renderStory() {
 function renderSuggestions() {
   const sug = (S.gameState.suggestions || []).filter(Boolean).slice(0, 3);
   if (!sug.length || S.loading) return "";
-  return `<div class="suggest-row">
-    ${sug.map((s) => `<button class="suggest-chip" data-act="suggest" data-text="${esc(s)}">${esc(s)}</button>`).join("")}
+  return `
+  <div class="suggest-wrap">
+    <button class="suggest-header" id="suggestToggleBtn">
+      <span>💡 建議行動</span><span class="suggest-chevron">${S.suggestionsCollapsed ? "▸" : "▾"}</span>
+    </button>
+    ${S.suggestionsCollapsed ? "" : `<div class="suggest-row">
+      ${sug.map((s) => `<button class="suggest-chip" data-act="suggest" data-text="${esc(s)}">${esc(s)}</button>`).join("")}
+    </div>`}
   </div>`;
 }
 
@@ -1956,6 +1968,10 @@ function bindEvents() {
   document.querySelectorAll('[data-act="suggest"]').forEach((btn) => {
     btn.onclick = () => send(btn.dataset.text);
   });
+  const readingModeBtn = document.getElementById("readingModeBtn");
+  if (readingModeBtn) readingModeBtn.onclick = () => { S.readingMode = !S.readingMode; render(); };
+  const suggestToggleBtn = document.getElementById("suggestToggleBtn");
+  if (suggestToggleBtn) suggestToggleBtn.onclick = () => { S.suggestionsCollapsed = !S.suggestionsCollapsed; render(); };
 
   // map
   document.querySelectorAll('[data-act="travel"]').forEach((node) => {
