@@ -15,10 +15,10 @@ const CORE_PROMPT = `
 【回覆格式－務必嚴格遵守】
 每次回覆分成兩部分：
 1) 劇情文字：正常小說敘述、對話（純文字，繁體中文，不夾雜任何markdown code fence）。
-2) 系統狀態：在回覆最後，輸出「唯一一個」用 \\\`\\\`\\\`state 開頭、\\\`\\\`\\\`
+2) 系統狀態：在回覆最後，輸出「唯一一個」用 \`\`\`state 開頭、\`\`\`
    結尾的 JSON code fence，內容是目前完整遊戲狀態，欄位需完整、每回合都
    要重新輸出整份（不是差異），格式如下：
-\\\`\\\`\\\`state
+\`\`\`state
 {
   "chapter": "第一章〈樂土初啟〉",
   "location": { "id": "furnace", "name": "爐火廣場" },
@@ -39,7 +39,7 @@ const CORE_PROMPT = `
     "elementsLost": {}
   }
 }
-\\\`\\\`\\\`
+\`\`\`
 - location.id 必須是以下其中之一：entrance（山下入口／初見村莊）、
   furnace（爐火廣場）、spring（魔力泉水）、arena（競技場）、
   shop（商街／白文鳥樂園）、factory（帝國機械工坊）、greyzone（灰色地帶）、
@@ -655,10 +655,109 @@ function renderNovelModal() {
           <div class="save-actions" style="margin-top:8px">
             <button class="btn ghost small" id="copyNovelBtn">📋 複製</button>
             <button class="btn ghost small" id="downloadNovelBtn">⬇️ 下載 .txt</button>
+            <button class="btn primary small" id="goShareBtn">📤 分享</button>
           </div>
         </div>` : ""}
     </div>
   </div>`;
+}
+
+// ---------- share screen ----------
+function getShareAuthorName() {
+  return localStorage.getItem("ic_share_author") || S.heroName || "";
+}
+function setShareAuthorName(name) {
+  localStorage.setItem("ic_share_author", name);
+}
+
+function buildShareText() {
+  const title = (S.gameState.ending && S.gameState.ending.title) || `${S.heroName}的無限煉製冒險`;
+  const author = (S.shareAuthorName || "").trim() || S.heroName || "一位鍊金術師";
+  return `《${title}》\n—— ${author} 著\n\n${S.novelText}\n\n（由《無限煉製 故事模式》AI 共同創作生成，玩家製作的非官方作品）`;
+}
+
+async function shareStory() {
+  if (!S.novelText) return;
+  const text = buildShareText();
+  const title = (S.gameState.ending && S.gameState.ending.title) || "無限煉製 故事模式";
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text });
+    } catch (e) {
+      if (e && e.name !== "AbortError") {
+        S.shareMsg = { type: "bad", text: "分享失敗：" + (e.message || e) };
+        render();
+      }
+    }
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    S.shareMsg = { type: "ok", text: "這個瀏覽器沒有原生分享功能，已經把全文複製到剪貼簿，可以貼到任何地方分享！" };
+  } catch (e) {
+    S.shareMsg = { type: "bad", text: "複製失敗，請手動選取文字複製。" };
+  }
+  render();
+}
+
+function renderShareModal() {
+  if (!S.novelText) {
+    return `
+    <div class="modal-overlay" id="modalOverlay">
+      <div class="modal" id="modalBox">
+        <div class="modal-head"><span>📤 分享故事</span><button class="modal-close" id="modalCloseBtn">✕</button></div>
+        <div class="modal-hint">還沒有生成故事喔，請先回到「📖 短篇小說」生成一篇，再回來分享。</div>
+        <div class="save-actions" style="margin-top:10px">
+          <button class="btn ghost small" id="shareBackBtn">← 回去生成故事</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  const title = (S.gameState.ending && S.gameState.ending.title) || `${S.heroName}的無限煉製冒險`;
+  const msg = S.shareMsg
+    ? `<div class="key-status ${S.shareMsg.type === "ok" ? "ok" : "bad"}">${esc(S.shareMsg.text)}</div>`
+    : "";
+  return `
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal" id="modalBox">
+      <div class="modal-head"><span>📤 分享故事</span><button class="modal-close" id="modalCloseBtn">✕</button></div>
+
+      <div class="modal-section">
+        <div class="modal-section-title">分享用的筆名</div>
+        <input id="shareAuthorInput" placeholder="你想用什麼名字分享？" value="${esc(S.shareAuthorName || "")}" />
+        <div class="modal-hint">可以跟遊戲裡的主角名字不一樣，這裡填的名字只會出現在分享出去的文字裡。</div>
+      </div>
+
+      <div class="share-preview">
+        <div class="share-preview-title">《${esc(title)}》</div>
+        <div class="share-preview-byline">—— ${esc((S.shareAuthorName || "").trim() || S.heroName || "一位鍊金術師")} 著</div>
+        <div class="share-preview-body">${esc(S.novelText)}</div>
+        <div class="share-preview-footer">由《無限煉製 故事模式》AI 共同創作生成，玩家製作的非官方作品</div>
+      </div>
+
+      ${msg}
+
+      <div class="save-actions" style="margin-top:10px">
+        <button class="btn primary small" id="shareNowBtn">📤 分享</button>
+        <button class="btn ghost small" id="shareCopyBtn">📋 複製全文</button>
+        <button class="btn ghost small" id="shareDownloadBtn">⬇️ 下載 .txt</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function downloadShareText() {
+  if (!S.novelText) return;
+  const blob = new Blob([buildShareText()], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const safeName = ((S.shareAuthorName || S.heroName || "分享故事")).replace(/[^\w\u4e00-\u9fff-]/g, "");
+  a.href = url;
+  a.download = `無限煉製_${safeName}_分享版.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function downloadNovel() {
@@ -911,6 +1010,9 @@ const S = {
   novelText: null,
   novelBusy: false,
   novelError: null,
+  shareAuthorName: "",
+  shareAuthorFocused: false,
+  shareMsg: null,
   // Infinite Alchemy Developer Platform import (see ia-oauth.js)
   iaProfile: null, // { id, workshopName, emblem, displayTitle } | null
   iaInventory: [], // raw items from GET /developer-api/v1/inventory
@@ -1688,6 +1790,7 @@ function travelTo(locId) {
 function renderModal() {
   const root = document.getElementById("modalRoot");
   if (S.modal === "novel") { root.innerHTML = renderNovelModal(); return; }
+  if (S.modal === "share") { root.innerHTML = renderShareModal(); return; }
   if (S.modal === "ia") { root.innerHTML = renderIaModal(); return; }
   if (S.modal !== "settings") { root.innerHTML = ""; return; }
   const key = getApiKey();
@@ -2124,6 +2227,49 @@ function bindModalEvents() {
   }
   const downloadNovelBtn = document.getElementById("downloadNovelBtn");
   if (downloadNovelBtn) downloadNovelBtn.onclick = () => downloadNovel();
+  const goShareBtn = document.getElementById("goShareBtn");
+  if (goShareBtn) {
+    goShareBtn.onclick = () => {
+      if (!S.shareAuthorName) S.shareAuthorName = getShareAuthorName();
+      S.shareMsg = null;
+      S.modal = "share";
+      render();
+    };
+  }
+
+  // share modal
+  const shareBackBtn = document.getElementById("shareBackBtn");
+  if (shareBackBtn) shareBackBtn.onclick = () => { S.modal = "novel"; render(); };
+  const shareAuthorInput = document.getElementById("shareAuthorInput");
+  if (shareAuthorInput) {
+    shareAuthorInput.oninput = (e) => {
+      S.shareAuthorName = e.target.value;
+      setShareAuthorName(e.target.value);
+      render();
+    };
+    shareAuthorInput.onfocus = () => { S.shareAuthorFocused = true; };
+    shareAuthorInput.onblur = () => { S.shareAuthorFocused = false; };
+    if (S.shareAuthorFocused) {
+      shareAuthorInput.focus();
+      shareAuthorInput.setSelectionRange(shareAuthorInput.value.length, shareAuthorInput.value.length);
+    }
+  }
+  const shareNowBtn = document.getElementById("shareNowBtn");
+  if (shareNowBtn) shareNowBtn.onclick = () => shareStory();
+  const shareCopyBtn = document.getElementById("shareCopyBtn");
+  if (shareCopyBtn) {
+    shareCopyBtn.onclick = () => {
+      navigator.clipboard?.writeText(buildShareText()).then(() => {
+        S.shareMsg = { type: "ok", text: "已複製到剪貼簿！" };
+        render();
+      }).catch(() => {
+        S.shareMsg = { type: "bad", text: "複製失敗，請手動選取文字複製。" };
+        render();
+      });
+    };
+  }
+  const shareDownloadBtn = document.getElementById("shareDownloadBtn");
+  if (shareDownloadBtn) shareDownloadBtn.onclick = () => downloadShareText();
 }
 
 // ---------- cloud auth listener ----------
