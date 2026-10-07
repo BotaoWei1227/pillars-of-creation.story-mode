@@ -1015,7 +1015,7 @@ const S = {
   shareMsg: null,
   // Infinite Alchemy Developer Platform import (see ia-oauth.js)
   iaProfile: null, // { id, workshopName, emblem, displayTitle } | null
-  iaInventory: [], // raw items from GET /developer-api/v1/inventory
+  iaInventions: [], // raw items from GET /developer-api/v1/inventions (the player's own creations, not their full inventory)
   iaSelected: {}, // { [item.id]: true } — which fetched items are checked for import
   iaQuery: "", // search text — only matching items are shown/importable, nothing is pre-selected
   iaSearchFocused: false,
@@ -1081,7 +1081,7 @@ async function iaConnect() {
 function iaDisconnect() {
   if (window.IAOAuth) window.IAOAuth.disconnect();
   S.iaProfile = null;
-  S.iaInventory = [];
+  S.iaInventions = [];
   S.iaSelected = {};
   S.iaMsg = null;
   render();
@@ -1099,14 +1099,14 @@ async function iaRefreshProfileAndInventory() {
   render();
   try {
     S.iaProfile = await window.IAOAuth.getProfile();
-    S.iaInventory = await window.IAOAuth.fetchInventory();
+    S.iaInventions = await window.IAOAuth.fetchInventions();
     // Nothing is pre-selected — the player searches their own list and
     // explicitly picks what to import, rather than everything being staged
     // for transfer by default.
     S.iaSelected = {};
     S.iaQuery = "";
   } catch (e) {
-    if (e && e.code === "invalid_token") { S.iaProfile = null; S.iaInventory = []; }
+    if (e && e.code === "invalid_token") { S.iaProfile = null; S.iaInventions = []; }
     S.iaMsg = { type: "bad", text: iaFriendlyError(e) };
   } finally {
     S.iaBusy = false;
@@ -1151,7 +1151,7 @@ async function iaUpdateRedirectUri() {
 }
 
 function iaImportSelected() {
-  const chosen = S.iaInventory.filter((it) => S.iaSelected[it.id]);
+  const chosen = S.iaInventions.filter((it) => S.iaSelected[it.id]);
   if (!chosen.length) {
     S.iaMsg = { type: "bad", text: "請至少勾選一件造物。" };
     render();
@@ -1939,7 +1939,7 @@ function renderInfiniteAlchemySection() {
     return `
     <div class="modal-section">
       ${disclaimer}
-      <div class="modal-hint">登入後可以把你在 Infinite Alchemy 裡實際擁有的造物匯入這個遊戲的背包。只會讀取公開的基本資料與造物清單，不會讀取好友、交易或任何帳號機密資訊。</div>
+      <div class="modal-hint">登入後可以把你在 Infinite Alchemy 裡親手創造出來的造物匯入這個遊戲的背包（讀取的是你自己的「創生物」，不是整個背包／庫存，所以買來的、別人送的、交易來的東西不會出現在這裡）。只會讀取公開的基本資料與創生物清單，不會讀取好友、交易或任何帳號機密資訊。</div>
       <div class="save-actions" style="margin-top:8px">
         <button class="btn primary small" id="iaConnectBtn">使用 Infinite Alchemy 帳號登入</button>
       </div>
@@ -1961,7 +1961,7 @@ function renderInfiniteAlchemySection() {
 
   const query = S.iaQuery.trim().toLowerCase();
   const filtered = query
-    ? S.iaInventory.filter((it) => (it.name || "").toLowerCase().includes(query))
+    ? S.iaInventions.filter((it) => (it.name || "").toLowerCase().includes(query))
     : [];
   const selectedCount = Object.values(S.iaSelected).filter(Boolean).length;
 
@@ -1975,10 +1975,10 @@ function renderInfiniteAlchemySection() {
     </label>`).join("");
 
   let listBlock;
-  if (!S.iaInventory.length) {
+  if (!S.iaInventions.length) {
     listBlock = `<div class="inv-empty">${S.iaBusy ? "讀取中…" : "這個帳號目前沒有造物，或還沒讀取。"}</div>`;
   } else if (!query) {
-    listBlock = `<div class="inv-empty">你在 Infinite Alchemy 裡有 ${S.iaInventory.length} 件造物——輸入關鍵字搜尋，找到想匯入的再勾選。</div>`;
+    listBlock = `<div class="inv-empty">你在 Infinite Alchemy 裡有 ${S.iaInventions.length} 件造物——輸入關鍵字搜尋，找到想匯入的再勾選。</div>`;
   } else {
     listBlock = invRows || `<div class="inv-empty">沒有造物名稱符合「${esc(S.iaQuery)}」。</div>`;
   }

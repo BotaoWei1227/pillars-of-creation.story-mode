@@ -15,19 +15,21 @@
      Functions backend in /functions for that, which needs the Server
      Secret and must never run in the browser).
 
-  This mini-game only requests the `profile` and `inventory.read` scopes —
-  the minimum needed to let a player import their own crafted items. It
-  never requests `inventions.read`, `history.read`, or any reward scope.
+  This mini-game only requests the `profile` and `inventions.read` scopes —
+  the minimum needed to let a player import creations they personally made
+  (not their whole inventory, which can include items they received,
+  bought, or traded rather than actually created). It never requests
+  `inventory.read`, `history.read`, or any reward scope.
 */
 
 window.INFINITE_ALCHEMY_CONFIG = {
   baseUrl: "https://pillars-of-creation.funtuan.work/",
-  clientId: "ia_DkgDHbWodgO43UgSUOHfoegU",
+  clientId: "YOUR_CLIENT_ID",
   // Exact redirect URI this app will present during OAuth. Defaults to the
   // page's own deployed URL (origin + path, no query/hash) so it auto-matches
   // wherever you actually host it (localhost while developing, GitHub Pages
   // in production) — just make sure whatever this resolves to in production
   // is EXACTLY what you register in Developer Center.
   redirectUri: window.location.origin + window.location.pathname,
-  scopes: "profile inventory.read",
+  scopes: "profile inventions.read",
 };

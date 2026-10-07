@@ -165,13 +165,16 @@
     return profileCache;
   }
 
-  // Fetches the player's full inventory, following nextOffset. Capped at a
-  // generous number of pages so a pathological response can't hang the UI.
-  async function fetchInventory() {
+  // Fetches the player's own creations (things they personally invented via
+  // crafting) — NOT their full inventory, which could include items they
+  // received, bought, or traded rather than actually made themselves.
+  // Follows nextOffset, capped at a generous number of pages so a
+  // pathological response can't hang the UI.
+  async function fetchInventions() {
     const items = [];
     let offset = 0;
     for (let page = 0; page < 20; page++) {
-      const data = await apiGet("developer-api/v1/inventory", { limit: 100, offset });
+      const data = await apiGet("developer-api/v1/inventions", { limit: 100, offset });
       items.push(...(data.items || []));
       if (data.nextOffset == null) break;
       offset = data.nextOffset;
@@ -186,6 +189,6 @@
     isConnected,
     disconnect,
     getProfile,
-    fetchInventory,
+    fetchInventions,
   };
 })();
