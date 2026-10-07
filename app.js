@@ -454,18 +454,18 @@ const ELEMENT_META = {
 };
 
 const LOCATIONS = {
-  entrance:  { name: "山下入口", emoji: "🏔️", x: 40, y: 255 },
-  greyzone:  { name: "灰色地帶", emoji: "🌫️", x: 258, y: 235 },
-  factory:   { name: "帝國機械工坊", emoji: "⚙️", x: 62, y: 150 },
-  furnace:   { name: "爐火廣場", emoji: "🔥", x: 150, y: 150 },
-  shop:      { name: "商街．白文鳥樂園", emoji: "🐦", x: 238, y: 150 },
-  spring:    { name: "魔力泉水", emoji: "💧", x: 150, y: 50 },
-  arena:     { name: "競技場", emoji: "⚔️", x: 150, y: 258 },
-  bunker:    { name: "金將軍地堡", emoji: "🛡️", x: 268, y: 55 },
-  dreamscape:{ name: "村民夢境", emoji: "💭", x: 42, y: 50 },
-  nepal:     { name: "尼泊爾雪山路途", emoji: "🏔️", x: 268, y: 150 },
-  hq:        { name: "將軍總部", emoji: "🏯", x: 150, y: 20 },
-  other:     { name: "村莊某處", emoji: "📍", x: 150, y: 150 },
+  entrance:   { name: "山下入口", emoji: "🏔️" },
+  greyzone:   { name: "灰色地帶", emoji: "🌫️" },
+  factory:    { name: "帝國機械工坊", emoji: "⚙️" },
+  furnace:    { name: "爐火廣場", emoji: "🔥" },
+  shop:       { name: "商街．白文鳥樂園", emoji: "🐦" },
+  spring:     { name: "魔力泉水", emoji: "💧" },
+  arena:      { name: "競技場", emoji: "⚔️" },
+  bunker:     { name: "金將軍地堡", emoji: "🛡️" },
+  dreamscape: { name: "村民夢境", emoji: "💭" },
+  nepal:      { name: "尼泊爾雪山路途", emoji: "🏔️" },
+  hq:         { name: "將軍總部", emoji: "🏯" },
+  other:      { name: "村莊某處", emoji: "📍" },
 };
 
 const DEFAULT_STATE = {
@@ -1661,7 +1661,7 @@ function getAllMaterials() {
       count: (st.elements && st.elements[key]) ?? 0, kind: "element",
     })),
     ...(st.items || []).map((it, i) => ({
-      id: `it_${i}_${it.name}`, name: it.name, emoji: itemEmoji(it), ring: "#c9974c",
+      id: `it_${i}_${it.name}`, name: it.name, emoji: itemEmoji(it), ring: "#a66ae0",
       count: 1, desc: it.desc, kind: "item",
       art: (it.art && String(it.art).startsWith("https:")) ? it.art : null,
     })),
@@ -1752,31 +1752,69 @@ function renderStatus() {
   </div>`;
 }
 
+// Compass layout: the player's current location sits fixed at the centre
+// (the "needle"), and every other known location is spaced evenly around a
+// ring they can tap to travel to — replaces the old fixed-pixel mountain
+// map, which read as cluttered since the node positions didn't correspond
+// to anything (not real geography, not distance, nothing).
 function renderMap() {
   const st = S.gameState;
   const activeId = st.location && LOCATIONS[st.location.id] ? st.location.id : "other";
-  const nodes = Object.entries(LOCATIONS).filter(([id]) => id !== "other").map(([id, loc]) => {
-    const active = id === activeId;
-    const clickable = !active && !S.loading;
-    return `<g class="map-node ${active ? "current" : ""} ${clickable ? "clickable" : ""}"
-               transform="translate(${loc.x},${loc.y})"
+  const activeLoc = LOCATIONS[activeId] || LOCATIONS.other;
+  const centerName = (st.location && st.location.name) || activeLoc.name;
+
+  const others = Object.entries(LOCATIONS).filter(([id]) => id !== "other" && id !== activeId);
+  const cx = 150, cy = 150, ringR = 104;
+  const deg2rad = (d) => (d * Math.PI) / 180;
+
+  const nodes = others.map(([id, loc], i) => {
+    const angle = (360 / others.length) * i - 90; // 0 = straight up (north), clockwise
+    const x = cx + ringR * Math.cos(deg2rad(angle));
+    const y = cy + ringR * Math.sin(deg2rad(angle));
+    const clickable = !S.loading;
+    return `<g class="map-node clickable" transform="translate(${x},${y})"
                ${clickable ? `data-act="travel" data-loc="${id}"` : ""}>
-      <circle r="${active ? 20 : 14}" fill="${active ? "#c9974c" : "#2a1d10"}" stroke="${active ? "#f0d9a0" : "#5c4526"}" stroke-width="${active ? 2.5 : 1.2}" />
-      <text text-anchor="middle" dy="6" font-size="${active ? 16 : 13}">${loc.emoji}</text>
-      <text text-anchor="middle" dy="${active ? 34 : 28}" font-size="9" fill="${active ? "#f0d9a0" : "#a68f66"}">${loc.name}</text>
+      <circle r="23" fill="#2e1d42" stroke="#5a4480" stroke-width="1.3" />
+      <text text-anchor="middle" dy="5" font-size="16">${loc.emoji}</text>
+      <text text-anchor="middle" dy="37" font-size="8.5" fill="#9c8ab8">${loc.name}</text>
     </g>`;
   }).join("");
+
+  const cardinals = [
+    { label: "北", angle: -90 }, { label: "東", angle: 0 },
+    { label: "南", angle: 90 }, { label: "西", angle: 180 },
+  ];
+  const cardinalMarks = cardinals.map((c) => {
+    const x = cx + (ringR + 30) * Math.cos(deg2rad(c.angle));
+    const y = cy + (ringR + 30) * Math.sin(deg2rad(c.angle));
+    return `<text x="${x}" y="${y}" text-anchor="middle" dy="4" font-size="11" font-family="Cinzel, serif" fill="#5a4480">${c.label}</text>`;
+  }).join("");
+
+  let ticks = "";
+  for (let a = 0; a < 360; a += 30) {
+    const x1 = cx + (ringR - 5) * Math.cos(deg2rad(a)), y1 = cy + (ringR - 5) * Math.sin(deg2rad(a));
+    const x2 = cx + (ringR + 5) * Math.cos(deg2rad(a)), y2 = cy + (ringR + 5) * Math.sin(deg2rad(a));
+    ticks += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#40306b" stroke-width="1" />`;
+  }
+
   return `
   <div class="tab-map">
-    <svg viewBox="0 0 300 300" class="village-map">
-      <defs><radialGradient id="peakGlow" cx="50%" cy="20%" r="70%">
-        <stop offset="0%" stop-color="#3a2a16" /><stop offset="100%" stop-color="#180f08" />
+    <svg viewBox="0 0 300 300" class="village-map compass-map">
+      <defs><radialGradient id="peakGlow" cx="50%" cy="50%" r="70%">
+        <stop offset="0%" stop-color="#3d2459" /><stop offset="100%" stop-color="#130b1c" />
       </radialGradient></defs>
       <rect x="0" y="0" width="300" height="300" fill="url(#peakGlow)" />
-      <path d="M0 280 L60 180 L110 230 L150 130 L190 220 L240 160 L300 260 L300 300 L0 300 Z" fill="#26190d" stroke="#4a3520" stroke-width="1" />
+      <circle cx="${cx}" cy="${cy}" r="${ringR}" fill="none" stroke="#40306b" stroke-width="1.5" stroke-dasharray="2 5" />
+      ${ticks}
+      ${cardinalMarks}
       ${nodes}
+      <g class="map-node current" transform="translate(${cx},${cy})">
+        <circle r="36" fill="#a66ae0" stroke="#e4c6ff" stroke-width="2.5" />
+        <text text-anchor="middle" dy="-3" font-size="22">${activeLoc.emoji}</text>
+        <text text-anchor="middle" dy="17" font-size="8.5" fill="#1c1030" font-weight="700">${esc(centerName)}</text>
+      </g>
     </svg>
-    <div class="map-hint">金色光點是你目前所在位置。點其他地點可以直接前往那裡，實際能不能到得了由劇情決定。</div>
+    <div class="map-hint">中央是你目前所在位置，周圍是可以直接前往的地方，點一下就出發（能不能到得了由劇情決定）。</div>
   </div>`;
 }
 
