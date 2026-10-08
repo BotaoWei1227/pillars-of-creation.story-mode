@@ -453,6 +453,54 @@ const ELEMENT_META = {
   thunder: { emoji: "⚡", label: "雷", ring: "#c9a537" },
 };
 
+// ---------- creation cards (TCG-style) ----------
+// 8 attributes, borrowed from the eight parts of speech, each with a
+// counter relationship to the next (entity -> shadow -> aura -> entity,
+// kinetic -> boost -> anchor -> burst, nexus -> burst, kinetic -> nexus).
+// This build only renders the cards — the weakness chain is stored as data
+// for a future battle mode, not acted on anywhere yet.
+const CARD_ATTRIBUTES = {
+  entity:  { name: "實體", pos: "名詞", emoji: "🗿", color: "#caa24a", beats: "aura" },
+  shadow:  { name: "幻影", pos: "代名詞", emoji: "👤", color: "#8a8fa8", beats: "entity" },
+  kinetic: { name: "動力", pos: "動詞", emoji: "⚡", color: "#d1618a", beats: "nexus" },
+  aura:    { name: "幻飾", pos: "形容詞", emoji: "✨", color: "#a66ae0", beats: "shadow" },
+  boost:   { name: "疾風", pos: "副詞", emoji: "💨", color: "#5ec2c2", beats: "kinetic" },
+  anchor:  { name: "脈絡", pos: "介系詞", emoji: "⚓", color: "#6a93d1", beats: "boost" },
+  nexus:   { name: "網絡", pos: "連接詞", emoji: "🔗", color: "#7fae7a", beats: "burst" },
+  burst:   { name: "爆發", pos: "驚嘆詞", emoji: "💥", color: "#e0954a", beats: "anchor" },
+};
+
+// The 30 standard effects a skill's flavor text can reference — passed to
+// the model as a vocabulary list, not enforced in code (no battle engine
+// yet, per "先把卡牌的部分做好就好").
+const CARD_STATUS_EFFECTS = [
+  "中毒", "灼傷", "凍傷", "感電", "流血", "虛弱", "易傷", "詛咒", "盲目", "沉默",
+  "治療", "再生", "護盾", "狂暴", "迅捷", "隱形", "淨化", "反射", "吸血", "無敵",
+  "眩暈", "凍結", "石化", "禁錮", "嘲諷", "恐懼", "混亂",
+  "斬殺", "死者復生", "延遲爆發",
+];
+
+const CARD_RARITY_META = {
+  R:   { label: "R", hint: "一般卡" },
+  SR:  { label: "SR", hint: "金框卡" },
+  SSR: { label: "SSR", hint: "彩框卡" },
+  UR:  { label: "UR", hint: "全圖卡" },
+};
+
+// d100, rolled client-side for the same reason every other die in this game
+// is — fairness isn't something to leave to the model. Rarity is purely
+// cosmetic (border style); it does not change HP, mana costs, or skills.
+function rollCardRarity() {
+  const roll = Math.floor(Math.random() * 100) + 1; // 1-100
+  let tier;
+  if (roll >= 100) tier = "UR";
+  else if (roll >= 90) tier = "SSR";
+  else if (roll >= 71) tier = "SR";
+  else tier = "R";
+  return { roll, tier };
+}
+function rollCardHp() { return 40 + Math.floor(Math.random() * 11); } // 40-50
+
 const LOCATIONS = {
   entrance:   { name: "山下入口", emoji: "🏔️" },
   greyzone:   { name: "灰色地帶", emoji: "🌫️" },
@@ -590,6 +638,99 @@ async function handleCloudUserChanged(user) {
 }
 
 // ---------- short-story generation ----------
+// One-shot Gemini text call with no system prompt / conversation history —
+// used for side features (card generation, novel export) that are separate
+// from the main GM loop and don't need game state synced back.
+async function callGeminiOneShot(prompt, maxOutputTokens) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(getModel())}:generateContent?key=${encodeURIComponent(getApiKey())}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: maxOutputTokens || 1024 },
+    }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data) throw new Error((data && data.error && data.error.message) || `HTTP ${res.status}`);
+  if (data.error) throw new Error(data.error.message || "API 錯誤");
+  const cand = data.candidates && data.candidates[0];
+  if (!cand) throw new Error("模型沒有回傳內容，可能被安全機制擋下，換個造物再試試看。");
+  const parts = (cand.content && cand.content.parts) || [];
+  return parts.map((p) => p.text || "").join("\n");
+}
+
+function cardPromptFor(item) {
+  const attrList = Object.entries(CARD_ATTRIBUTES).map(([k, a]) => `${k}=${a.name}(${a.pos})`).join("、");
+  return `你是一款桌遊的卡牌設計師，要把一件奇幻煉金世界裡的「造物」改編成一張類似寶可夢卡牌的對戰卡。
+
+造物資料：
+名稱：${item.name}
+效果/描述：${item.desc || "（無特別描述）"}
+
+請完成以下兩件事：
+1. 從這8個屬性裡，挑一個最貼合這件造物氣質的（只能選一個，直接給key）：
+${attrList}
+2. 設計兩個技能，風格要呼應造物本身的名稱與描述，不要兩個技能都差不多。每個技能包含：
+   - name：技能名稱（4~10字，中二一點沒關係）
+   - cost：消耗的魔力值，1~4之間的整數（這張卡沒有屬性能量分別，只有單一種魔力）
+   - damage：建議傷害值，8~22之間的整數（這張卡血量落在40~50，傷害不要高到一兩下就能單殺對面，但也不要低到打不痛）
+   - effect：一句話效果描述（繁體中文，20字以內），可以自然帶入下面這些標準效果詞彙裡的0~1個（不要硬塞，沒有特別效果就留空或純粹描述傷害手感即可）：
+     ${CARD_STATUS_EFFECTS.join("、")}
+3. 寫一句卡牌風味文字（flavor，15~30字，營造氣氛即可，不要直接複述效果數字）
+
+只回傳一個JSON物件，不要有任何其他文字、不要用markdown code fence包起來，格式必須完全符合：
+{"attribute":"entity","skills":[{"name":"...","cost":2,"damage":14,"effect":"..."},{"name":"...","cost":3,"damage":18,"effect":"..."}],"flavor":"..."}`;
+}
+
+async function cardifyItem(itemIndex) {
+  if (!getApiKey()) {
+    S.cardError = { index: itemIndex, text: "請先設定 Gemini API 金鑰。" };
+    render();
+    return;
+  }
+  const item = (S.gameState.items || [])[itemIndex];
+  if (!item) return;
+  S.cardBusy = itemIndex;
+  S.cardError = null;
+  render();
+  try {
+    const { roll, tier } = rollCardRarity();
+    const hp = rollCardHp();
+    const raw = await callGeminiOneShot(cardPromptFor(item), 600);
+    const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+    const parsed = JSON.parse(cleaned);
+    if (!CARD_ATTRIBUTES[parsed.attribute]) parsed.attribute = "entity";
+    const skills = Array.isArray(parsed.skills) ? parsed.skills.slice(0, 2) : [];
+    while (skills.length < 2) skills.push({ name: "蓄力", cost: 1, damage: 10, effect: "" });
+
+    const items = [...S.gameState.items];
+    items[itemIndex] = {
+      ...item,
+      card: {
+        attribute: parsed.attribute,
+        hp,
+        skills: skills.map((s) => ({
+          name: String(s.name || "未命名招式").slice(0, 14),
+          cost: Math.min(4, Math.max(1, Math.round(Number(s.cost) || 1))),
+          damage: Math.min(30, Math.max(1, Math.round(Number(s.damage) || 10))),
+          effect: String(s.effect || "").slice(0, 30),
+        })),
+        flavor: String(parsed.flavor || "").slice(0, 40),
+        rarity: tier,
+        rarityRoll: roll,
+      },
+    };
+    S.gameState.items = items;
+    persistSave();
+  } catch (e) {
+    S.cardError = { index: itemIndex, text: "卡片化失敗：" + (e.message || e) };
+  } finally {
+    S.cardBusy = null;
+    render();
+  }
+}
+
 async function generateNovel() {
   if (!getApiKey()) {
     S.novelError = "請先設定 Gemini API 金鑰。";
@@ -1013,6 +1154,8 @@ const S = {
   shareAuthorName: "",
   shareAuthorFocused: false,
   shareMsg: null,
+  cardBusy: null, // index of the item currently being cardified, or null
+  cardError: null, // { index, text } | null
   // Infinite Alchemy Developer Platform import (see ia-oauth.js)
   iaProfile: null, // { id, workshopName, emblem, displayTitle } | null
   iaInventions: [], // raw items from GET /developer-api/v1/inventions (the player's own creations, not their full inventory)
@@ -1562,12 +1705,14 @@ function renderGame() {
       <button class="tabbtn ${S.tab === "craft" ? "active" : ""}" data-tab="craft">⚗️ 煉製</button>
       <button class="tabbtn ${S.tab === "status" ? "active" : ""}" data-tab="status">📊 狀態</button>
       <button class="tabbtn ${S.tab === "map" ? "active" : ""}" data-tab="map">🗺️ 地圖</button>
+      <button class="tabbtn ${S.tab === "cards" ? "active" : ""}" data-tab="cards">🃏 卡牌</button>
     </div>
     <div class="tab-body">
       ${S.tab === "story" ? renderStory() : ""}
       ${S.tab === "craft" ? renderCraft() : ""}
       ${S.tab === "status" ? renderStatus() : ""}
       ${S.tab === "map" ? renderMap() : ""}
+      ${S.tab === "cards" ? renderCards() : ""}
     </div>
   </div>`;
 }
@@ -1815,6 +1960,73 @@ function renderMap() {
       </g>
     </svg>
     <div class="map-hint">中央是你目前所在位置，周圍是可以直接前往的地方，點一下就出發（能不能到得了由劇情決定）。</div>
+  </div>`;
+}
+
+// ---------- cards tab ----------
+function renderTcgCard(item) {
+  const c = item.card;
+  const attr = CARD_ATTRIBUTES[c.attribute] || CARD_ATTRIBUTES.entity;
+  const rarityMeta = CARD_RARITY_META[c.rarity] || CARD_RARITY_META.R;
+  const art = item.art
+    ? `<img class="tcg-art-img" src="${esc(item.art)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />`
+    : "";
+  const artFallback = `<div class="tcg-art-emoji" ${item.art ? 'style="display:none"' : ""}>${esc(itemEmoji(item))}</div>`;
+
+  const skillsHtml = c.skills.map((s) => `
+    <div class="tcg-skill">
+      <div class="tcg-skill-head">
+        <span class="tcg-skill-cost">${"💠".repeat(s.cost)}</span>
+        <span class="tcg-skill-name">${esc(s.name)}</span>
+        <span class="tcg-skill-dmg">${s.damage}</span>
+      </div>
+      ${s.effect ? `<div class="tcg-skill-effect">${esc(s.effect)}</div>` : ""}
+    </div>`).join("");
+
+  return `
+  <div class="tcg-card rarity-${c.rarity}">
+    <div class="tcg-card-head">
+      <span class="tcg-card-name">${esc(item.name)}</span>
+      <span class="tcg-card-hp">HP ${c.hp}</span>
+    </div>
+    <div class="tcg-card-attr" style="--attr-color:${attr.color}">
+      <span>${attr.emoji}</span><span>${attr.name}</span>
+    </div>
+    <div class="tcg-art">${art}${artFallback}</div>
+    <div class="tcg-skills">${skillsHtml}</div>
+    ${c.flavor ? `<div class="tcg-flavor">${esc(c.flavor)}</div>` : ""}
+    <div class="tcg-rarity-tag">${rarityMeta.label}</div>
+  </div>`;
+}
+
+function renderCards() {
+  const items = S.gameState.items || [];
+  if (!items.length) {
+    return `<div class="tab-cards"><div class="inv-empty">背包裡還沒有任何造物可以做成卡牌，先去煉製台做點東西吧。</div></div>`;
+  }
+  const blocks = items.map((item, i) => {
+    if (item.card) return `<div class="tcg-card-wrap">${renderTcgCard(item)}</div>`;
+    const busy = S.cardBusy === i;
+    const err = S.cardError && S.cardError.index === i ? S.cardError.text : null;
+    return `
+    <div class="tcg-pending">
+      <div class="tcg-pending-emoji">${esc(itemEmoji(item))}</div>
+      <div class="tcg-pending-info">
+        <div class="tcg-pending-name">${esc(item.name)}</div>
+        ${item.desc ? `<div class="tcg-pending-desc">${esc(item.desc)}</div>` : ""}
+      </div>
+      <button class="btn ghost small" data-act="cardify" data-idx="${i}" ${busy ? "disabled" : ""}>
+        ${busy ? "生成中…" : "🎴 卡片化"}
+      </button>
+      ${err ? `<div class="key-status bad" style="flex-basis:100%">${esc(err)}</div>` : ""}
+    </div>`;
+  }).join("");
+  return `
+  <div class="tab-cards">
+    <div class="map-hint" style="margin-bottom:10px">
+      點「卡片化」把造物變成對戰卡——稀有度用100面骰決定（70以下R卡、71~89 SR金框、90~99 SSR彩框、100 UR全圖卡），純外觀，不影響技能強度。屬性與技能由AI依造物特性設計。
+    </div>
+    ${blocks}
   </div>`;
 }
 
@@ -2117,6 +2329,11 @@ function bindEvents() {
   // map
   document.querySelectorAll('[data-act="travel"]').forEach((node) => {
     node.onclick = () => travelTo(node.dataset.loc);
+  });
+
+  // cards
+  document.querySelectorAll('[data-act="cardify"]').forEach((btn) => {
+    btn.onclick = () => cardifyItem(parseInt(btn.dataset.idx, 10));
   });
 
   // craft

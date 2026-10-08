@@ -334,3 +334,91 @@ body {
 .key-status.ok { color: var(--success); }
 .key-status.bad { color: var(--danger); }
 .save-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ---------- creation cards (TCG-style) ---------- */
+.tab-cards { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 2px; }
+
+.tcg-pending {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--bg-panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+}
+.tcg-pending-emoji { font-size: 24px; flex-shrink: 0; }
+.tcg-pending-info { flex: 1; min-width: 100px; }
+.tcg-pending-name { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+.tcg-pending-desc { font-size: 11px; color: var(--ink-dim); margin-top: 2px; }
+
+.tcg-card-wrap { display: flex; justify-content: center; }
+.tcg-card {
+  position: relative; width: 100%; max-width: 280px; aspect-ratio: 5 / 7;
+  border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 6px;
+  background: linear-gradient(165deg, #241a33 0%, #160e20 100%);
+  border: 3px solid #4a3f66; box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+}
+
+/* R: plain border, no glow */
+.tcg-card.rarity-R { border-color: #4a3f66; }
+
+/* SR: gold border */
+.tcg-card.rarity-SR { border: 3px solid #d4af37; box-shadow: 0 0 14px rgba(212,175,55,0.35), 0 6px 18px rgba(0,0,0,0.5); }
+
+/* SSR: animated rainbow border */
+.tcg-card.rarity-SSR {
+  border: 3px solid transparent;
+  background-image: linear-gradient(165deg, #241a33 0%, #160e20 100%), 
+    conic-gradient(from var(--ssr-angle, 0deg), #ff6ec7, #ffd86e, #6effa0, #6ec7ff, #c76eff, #ff6ec7);
+  background-origin: border-box; background-clip: padding-box, border-box;
+  box-shadow: 0 0 18px rgba(199,110,255,0.35), 0 6px 18px rgba(0,0,0,0.5);
+  animation: ssr-spin 5s linear infinite;
+}
+@property --ssr-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+@keyframes ssr-spin { to { --ssr-angle: 360deg; } }
+
+/* UR: full-art foil — art bleeds edge to edge, text overlays with a scrim */
+.tcg-card.rarity-UR {
+  border: 3px solid #f0d9a0;
+  box-shadow: 0 0 22px rgba(240,217,160,0.45), 0 6px 18px rgba(0,0,0,0.55);
+}
+.tcg-card.rarity-UR .tcg-art {
+  position: absolute; inset: 0; border-radius: 11px; height: auto;
+  background: linear-gradient(165deg, #3d2459 0%, #1a0f28 100%);
+}
+.tcg-card.rarity-UR .tcg-card-head,
+.tcg-card.rarity-UR .tcg-card-attr,
+.tcg-card.rarity-UR .tcg-skills,
+.tcg-card.rarity-UR .tcg-flavor { position: relative; z-index: 1; }
+.tcg-card.rarity-UR .tcg-card-head { background: rgba(10,6,16,0.55); border-radius: 6px; padding: 2px 6px; }
+.tcg-card.rarity-UR .tcg-skills { background: rgba(10,6,16,0.72); border-radius: 6px; padding: 6px; }
+.tcg-card.rarity-UR .tcg-flavor { background: rgba(10,6,16,0.55); border-radius: 6px; }
+.tcg-card.rarity-UR::after {
+  content: ""; position: absolute; inset: 0; border-radius: 11px; pointer-events: none;
+  background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,0.18) 45%, transparent 60%);
+  background-size: 250% 250%; animation: ur-shine 3.5s ease-in-out infinite;
+}
+@keyframes ur-shine { 0% { background-position: 200% 0; } 100% { background-position: -50% 100%; } }
+
+.tcg-card-head { display: flex; justify-content: space-between; align-items: baseline; }
+.tcg-card-name { font-family: 'Noto Serif TC', serif; font-weight: 900; font-size: 14px; color: var(--brass-light); }
+.tcg-card-hp { font-family: 'Cinzel', serif; font-size: 11px; color: #e07878; }
+.tcg-card-attr {
+  display: flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--attr-color, var(--ink-dim));
+  font-family: 'Cinzel', serif; letter-spacing: 0.5px;
+}
+.tcg-art {
+  flex: 1; min-height: 0; border-radius: 8px; overflow: hidden;
+  background: radial-gradient(circle, #3d2459 0%, #160e20 80%);
+  display: flex; align-items: center; justify-content: center;
+}
+.tcg-art-img { width: 100%; height: 100%; object-fit: contain; }
+.tcg-art-emoji { font-size: 54px; }
+.tcg-skills { display: flex; flex-direction: column; gap: 4px; }
+.tcg-skill { background: rgba(10,6,16,0.4); border-radius: 5px; padding: 4px 7px; }
+.tcg-skill-head { display: flex; align-items: center; gap: 5px; }
+.tcg-skill-cost { font-size: 9px; letter-spacing: -1px; flex-shrink: 0; }
+.tcg-skill-name { flex: 1; font-size: 11px; font-weight: 700; color: var(--ink); }
+.tcg-skill-dmg { font-family: 'Cinzel', serif; font-size: 12px; color: var(--brass-light); font-weight: 700; }
+.tcg-skill-effect { font-size: 9.5px; color: var(--ink-dim); margin-top: 2px; line-height: 1.4; }
+.tcg-flavor { font-size: 9px; color: var(--ink-dim); font-style: italic; text-align: center; line-height: 1.4; }
+.tcg-rarity-tag {
+  position: absolute; top: -8px; right: 10px; font-family: 'Cinzel', serif; font-size: 10px; font-weight: 700;
+  background: var(--bg-deep); border: 1px solid var(--line); border-radius: 10px; padding: 2px 8px; color: var(--brass-light);
+}
