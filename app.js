@@ -31,6 +31,7 @@ const CORE_PROMPT = `
   "lastRoll": null,
   "suggestions": ["<這裡填根據這一回合劇情現場想出的建議1>", "<方向要跟建議1不同的建議2>", "<方向要跟前兩個都不同的建議3>"],
   "ending": null,
+  "battle": null,
   "craftOutcome": null,
   "inventoryChange": {
     "itemsGained": [],
@@ -72,6 +73,19 @@ const CORE_PROMPT = `
   結束，之後不會再有下一回合，所以劇情文字也要把這一回合直接寫成完整的
   結局收尾（不是半途而廢），不需要再給suggestions（這種情況suggestions
   給空陣列[]即可）。
+- battle：當劇情發展到「玩家即將與某個敵人正面交手、需要打一場」的那一刻
+  （不是擦邊提到危險，而是真的要開打了），填入
+  {"enemyName":"敵人的名稱（簡短，例如「肌肉蟑螂兵」「金將軍麾下的機械哨兵」）",
+  "enemyDesc":"1~2句話描述這個敵人的外觀與氣質，給一個卡牌設計師去設計
+  技能用，不用寫數值"}，前端收到後會接手把這場戰鬥變成卡牌對戰小遊戲
+  （由前端自己運算勝負，不是由你決定），你完全不用、也不可以在劇情文字
+  裡描述這場戰鬥的具體過程或結果——寫到「戰鬥一觸即發」之類的氣氛收尾
+  就好，battle欄位本身就是觸發訊號。其他所有回合一律填null。玩家用
+  完卡牌對戰之後，下一則訊息會自動附上戰鬥結果（誰贏、損失多少HP等），
+  你只要依照那個結果繼續寫劇情、不要自己再重複判定一次輸贏。普通的
+  小摩擦、嘴炮、威脅、單純擲骰判定就能解決的小衝突，不需要觸發battle，
+  只有「夠份量、值得打一場」的戰鬥才觸發（例如遭遇戰、頭目戰），不要
+  每次提到敵人就觸發，一個章節抓1~3次差不多。
 
 【重要：背包／元素的回報方式，禁止回傳完整清單】
 這個版本不再要你每回合回報完整的 items/elements 清單——完整清單改由
@@ -660,7 +674,21 @@ async function callGeminiOneShot(prompt, maxOutputTokens) {
   return parts.map((p) => p.text || "").join("\n");
 }
 
-function cardPromptFor(item) {
+// Cost and damage are rolled here, by the frontend, BEFORE the model is
+// asked for anything — never taken from whatever number the model feels
+// like writing. Once a real battle engine computes outcomes from these
+// numbers, letting the model freely invent them would make "the frontend
+// computes battles" meaningless, since the balance would still secretly be
+// whatever the model wrote. The model only gets to name the two already-
+// fixed skills and write flavor text that fits the numbers it's told.
+function rollSkillSpecs() {
+  const basic = { cost: 1, damage: 8 + Math.floor(Math.random() * 5) }; // 8-12
+  const sigCost = 2 + Math.floor(Math.random() * 3); // 2-4
+  const signature = { cost: sigCost, damage: 10 + sigCost * 4 + Math.floor(Math.random() * 5) }; // scales with cost
+  return [basic, signature];
+}
+
+function cardPromptFor(item, specs) {
   const attrList = Object.entries(CARD_ATTRIBUTES).map(([k, a]) => `${k}=${a.name}(${a.pos})`).join("、");
   return `你是一款桌遊的卡牌設計師，要把一件奇幻煉金世界裡的「造物」改編成一張類似寶可夢卡牌的對戰卡。
 
@@ -668,19 +696,41 @@ function cardPromptFor(item) {
 名稱：${item.name}
 效果/描述：${item.desc || "（無特別描述）"}
 
-請完成以下兩件事：
+請完成以下三件事：
 1. 從這8個屬性裡，挑一個最貼合這件造物氣質的（只能選一個，直接給key）：
 ${attrList}
-2. 設計兩個技能，風格要呼應造物本身的名稱與描述，不要兩個技能都差不多。每個技能包含：
-   - name：技能名稱（4~10字，中二一點沒關係）
-   - cost：消耗的魔力值，1~4之間的整數（這張卡沒有屬性能量分別，只有單一種魔力）
-   - damage：建議傷害值，8~22之間的整數（這張卡血量落在40~50，傷害不要高到一兩下就能單殺對面，但也不要低到打不痛）
-   - effect：一句話效果描述（繁體中文，20字以內），可以自然帶入下面這些標準效果詞彙裡的0~1個（不要硬塞，沒有特別效果就留空或純粹描述傷害手感即可）：
-     ${CARD_STATUS_EFFECTS.join("、")}
-3. 寫一句卡牌風味文字（flavor，15~30字，營造氣氛即可，不要直接複述效果數字）
+2. 這張卡已經有兩個「數值固定、你不能更改」的技能，你只需要幫它們各取一個
+   符合威力感的名稱、寫一句效果描述。數值是遊戲系統先決定好的，不是你決定：
+   - 技能1（入門技能）：消耗${specs[0].cost}點魔力，造成${specs[0].damage}點傷害——
+     威力較低、消耗也低，取名跟描述要呼應這是比較基礎、常用的招式。
+   - 技能2（招牌技能）：消耗${specs[1].cost}點魔力，造成${specs[1].damage}點傷害——
+     這張卡最強的招式，取名跟描述要呼應這是更強、更有份量的大招。
+   效果描述（20字以內，繁體中文）可以自然帶入下面這些標準效果詞彙裡的0~1個
+   （不要硬塞，沒有特別效果就純粹描述傷害手感即可，不要自己編數字）：
+   ${CARD_STATUS_EFFECTS.join("、")}
+3. 寫一句卡牌風味文字（flavor，15~30字，營造氣氛即可，不要提到任何數字）
 
-只回傳一個JSON物件，不要有任何其他文字、不要用markdown code fence包起來，格式必須完全符合：
-{"attribute":"entity","skills":[{"name":"...","cost":2,"damage":14,"effect":"..."},{"name":"...","cost":3,"damage":18,"effect":"..."}],"flavor":"..."}`;
+只回傳一個JSON物件，不要有任何其他文字、不要用markdown code fence包起來，格式必須完全符合（技能的cost/damage不用回傳，前端已經有了）：
+{"attribute":"entity","skill1Name":"...","skill1Effect":"...","skill2Name":"...","skill2Effect":"...","flavor":"..."}`;
+}
+
+// Shared by both cardifyItem (player creations) and generateEnemyCardForBattle
+// (battle opponents) — rolls rarity/HP/skill numbers locally, asks the model
+// only for attribute + names + flavor text, and clamps every model-provided
+// string field defensively regardless of what comes back.
+async function generateCardData(sourceItem) {
+  const { roll, tier } = rollCardRarity();
+  const hp = rollCardHp();
+  const specs = rollSkillSpecs();
+  const raw = await callGeminiOneShot(cardPromptFor(sourceItem, specs), 500);
+  const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  const parsed = JSON.parse(cleaned);
+  const attribute = CARD_ATTRIBUTES[parsed.attribute] ? parsed.attribute : "entity";
+  const skills = [
+    { name: String(parsed.skill1Name || "入門技").slice(0, 14), cost: specs[0].cost, damage: specs[0].damage, effect: String(parsed.skill1Effect || "").slice(0, 30) },
+    { name: String(parsed.skill2Name || "招牌技").slice(0, 14), cost: specs[1].cost, damage: specs[1].damage, effect: String(parsed.skill2Effect || "").slice(0, 30) },
+  ];
+  return { attribute, hp, skills, flavor: String(parsed.flavor || "").slice(0, 40), rarity: tier, rarityRoll: roll };
 }
 
 async function cardifyItem(itemIndex) {
@@ -695,32 +745,9 @@ async function cardifyItem(itemIndex) {
   S.cardError = null;
   render();
   try {
-    const { roll, tier } = rollCardRarity();
-    const hp = rollCardHp();
-    const raw = await callGeminiOneShot(cardPromptFor(item), 600);
-    const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-    const parsed = JSON.parse(cleaned);
-    if (!CARD_ATTRIBUTES[parsed.attribute]) parsed.attribute = "entity";
-    const skills = Array.isArray(parsed.skills) ? parsed.skills.slice(0, 2) : [];
-    while (skills.length < 2) skills.push({ name: "蓄力", cost: 1, damage: 10, effect: "" });
-
+    const card = await generateCardData(item);
     const items = [...S.gameState.items];
-    items[itemIndex] = {
-      ...item,
-      card: {
-        attribute: parsed.attribute,
-        hp,
-        skills: skills.map((s) => ({
-          name: String(s.name || "未命名招式").slice(0, 14),
-          cost: Math.min(4, Math.max(1, Math.round(Number(s.cost) || 1))),
-          damage: Math.min(30, Math.max(1, Math.round(Number(s.damage) || 10))),
-          effect: String(s.effect || "").slice(0, 30),
-        })),
-        flavor: String(parsed.flavor || "").slice(0, 40),
-        rarity: tier,
-        rarityRoll: roll,
-      },
-    };
+    items[itemIndex] = { ...item, card };
     S.gameState.items = items;
     persistSave();
   } catch (e) {
@@ -729,6 +756,148 @@ async function cardifyItem(itemIndex) {
     S.cardBusy = null;
     render();
   }
+}
+
+// ---------- battle (PTCGP-style single-card duel, frontend-computed) ----------
+function battleEligibleItems() {
+  return (S.gameState.items || [])
+    .map((it, i) => ({ it, i }))
+    .filter(({ it }) => it.card);
+}
+
+function startBattle(info) {
+  if (S.battle) return; // already mid-battle, ignore a stray re-trigger
+  S.battle = {
+    enemyName: (info && info.enemyName) || "神秘敵人",
+    enemyDesc: (info && info.enemyDesc) || "",
+    phase: "pick", // pick | loading | fight | result
+    error: null,
+    playerItemIndex: null,
+    playerCard: null,
+    enemyCard: null,
+    playerHp: 0, enemyHp: 0,
+    playerMaxHp: 0, enemyMaxHp: 0,
+    playerEnergy: 0, enemyEnergy: 0,
+    log: [],
+    result: null, // "win" | "lose" | "fled" | null
+  };
+  S.modal = "battle";
+}
+
+async function pickBattleCard(itemIndex) {
+  const b = S.battle;
+  const item = (S.gameState.items || [])[itemIndex];
+  if (!b || !item || !item.card) return;
+  b.playerItemIndex = itemIndex;
+  b.playerCard = {
+    name: item.name, emoji: itemEmoji(item), art: item.art || null,
+    attribute: item.card.attribute, skills: item.card.skills,
+  };
+  b.playerHp = item.card.hp;
+  b.playerMaxHp = item.card.hp;
+  b.playerEnergy = 1; // the player's turn-1 energy is already attached — they go first
+  b.phase = "loading";
+  render();
+  try {
+    const enemy = await generateCardData({ name: b.enemyName, desc: b.enemyDesc });
+    b.enemyCard = {
+      name: b.enemyName, emoji: "👹", art: null,
+      attribute: enemy.attribute, skills: enemy.skills, rarity: enemy.rarity, rarityRoll: enemy.rarityRoll,
+    };
+    b.enemyHp = enemy.hp;
+    b.enemyMaxHp = enemy.hp;
+    b.enemyEnergy = 0;
+    b.phase = "fight";
+    b.log = [`遭遇了「${b.enemyName}」！`];
+  } catch (e) {
+    b.error = "生成對手失敗：" + (e.message || e);
+    b.phase = "pick";
+  } finally {
+    render();
+  }
+}
+
+function fleeBattle() {
+  if (!S.battle) return;
+  S.battle.result = "fled";
+  closeBattleAndReport();
+}
+
+// Weakness only (no resistance), flat +10 — matches PTCGP's actual damage
+// math (a fixed bonus, not a multiplier), one-directional along the beats
+// chain defined on CARD_ATTRIBUTES.
+function attributeBeats(attackerKey, defenderKey) {
+  const atk = CARD_ATTRIBUTES[attackerKey];
+  return !!(atk && atk.beats === defenderKey);
+}
+
+// Energy attaches +1 per turn and is never spent by attacking (PTCGP energy
+// stays attached once placed) — this is computed entirely here, with no AI
+// involvement in who wins, by how much, or what happens next.
+function useBattleSkill(skillIndex) {
+  const b = S.battle;
+  if (!b || b.phase !== "fight" || b.result) return;
+  const skill = b.playerCard.skills[skillIndex];
+  if (!skill || skill.cost > b.playerEnergy) return;
+
+  const beat = attributeBeats(b.playerCard.attribute, b.enemyCard.attribute);
+  const dmg = skill.damage + (beat ? 10 : 0);
+  b.enemyHp = Math.max(0, b.enemyHp - dmg);
+  b.log.push(`你使出「${skill.name}」，造成 ${dmg} 點傷害${beat ? "（屬性剋制 +10！）" : ""}。`);
+
+  if (b.enemyHp <= 0) {
+    b.result = "win";
+    b.log.push(`「${b.enemyCard.name}」被擊倒了！你獲勝了！`);
+    render();
+    return;
+  }
+
+  b.enemyEnergy += 1;
+  const affordable = b.enemyCard.skills.filter((s) => s.cost <= b.enemyEnergy);
+  const pool = affordable.length ? affordable : [b.enemyCard.skills[0]];
+  const eSkill = pool.reduce((a, c) => (c.damage > a.damage ? c : a));
+  const eBeat = attributeBeats(b.enemyCard.attribute, b.playerCard.attribute);
+  const eDmg = eSkill.damage + (eBeat ? 10 : 0);
+  b.playerHp = Math.max(0, b.playerHp - eDmg);
+  b.log.push(`「${b.enemyCard.name}」使出「${eSkill.name}」，對你造成 ${eDmg} 點傷害${eBeat ? "（屬性剋制 +10！）" : ""}。`);
+
+  if (b.playerHp <= 0) {
+    b.result = "lose";
+    b.log.push(`你的「${b.playerCard.name}」被擊倒了……`);
+    render();
+    return;
+  }
+
+  b.playerEnergy += 1;
+  render();
+}
+
+const BATTLE_LOSS_HP_PENALTY = 12;
+
+// Hands the outcome back to the GM as a plain fact it must accept, not
+// re-adjudicate — same pattern as the dice-roll and ground-truth-inventory
+// notes: the frontend decided this, the model just narrates around it.
+function closeBattleAndReport() {
+  const b = S.battle;
+  if (!b) return;
+  let summary;
+  if (b.result === "fled") {
+    summary = `（戰鬥結算：我選擇不正面應戰「${b.enemyName}」，設法迴避或用其他方式應對，請依此繼續劇情，不要描述一場正式的卡牌戰鬥。）`;
+  } else if (!b.playerCard || !b.enemyCard) {
+    summary = `（戰鬥結算：我目前沒有任何卡片化的造物可以應戰「${b.enemyName}」，只能設法迴避或用其他方式應對這個威脅，請依此調整劇情，不要用卡牌戰鬥的方式描述。）`;
+  } else {
+    const win = b.result === "win";
+    let hpNote = "";
+    if (!win) {
+      S.gameState.hp = Math.max(0, S.gameState.hp - BATTLE_LOSS_HP_PENALTY);
+      hpNote = `，我的角色因此損失了${BATTLE_LOSS_HP_PENALTY}點HP`;
+    }
+    summary = `（戰鬥結算：我用「${b.playerCard.name}」迎戰「${b.enemyCard.name}」，結果${win ? "獲勝" : "落敗"}${hpNote}。請依照這個結果繼續寫劇情，不要重新判定這場戰鬥的輸贏。）`;
+  }
+  S.modal = null;
+  S.battle = null;
+  persistSave();
+  send(summary);
 }
 
 async function generateNovel() {
@@ -1156,6 +1325,7 @@ const S = {
   shareMsg: null,
   cardBusy: null, // index of the item currently being cardified, or null
   cardError: null, // { index, text } | null
+  battle: null, // active battle state, see startBattle()
   // Infinite Alchemy Developer Platform import (see ia-oauth.js)
   iaProfile: null, // { id, workshopName, emblem, displayTitle } | null
   iaInventions: [], // raw items from GET /developer-api/v1/inventions (the player's own creations, not their full inventory)
@@ -1401,11 +1571,13 @@ function applyReply(rawText, historyBeforeReply) {
   const { narrative, state } = parseReply(rawText);
   let craftOutcome = null;
   let inventoryChange = null;
+  let battleTrigger = null;
 
   if (state) {
     craftOutcome = state.craftOutcome || null;
     inventoryChange = state.inventoryChange || null;
-    const { craftOutcome: _co, inventoryChange: _ic, ...rest } = state;
+    battleTrigger = state.battle || null;
+    const { craftOutcome: _co, inventoryChange: _ic, battle: _b, ...rest } = state;
     S.gameState = { ...S.gameState, ...rest };
   }
 
@@ -1429,6 +1601,11 @@ function applyReply(rawText, historyBeforeReply) {
 
   if (S.gameState.ending && S.gameState.ending.title) {
     onGameEnded();
+    return;
+  }
+
+  if (battleTrigger && battleTrigger.enemyName && !S.battle) {
+    startBattle(battleTrigger);
   }
 }
 
@@ -2030,6 +2207,94 @@ function renderCards() {
   </div>`;
 }
 
+function renderBattleCombatant(card, hp, maxHp, energy, isPlayer) {
+  const attr = CARD_ATTRIBUTES[card.attribute] || CARD_ATTRIBUTES.entity;
+  const hpPct = Math.max(0, Math.min(100, (hp / maxHp) * 100));
+  const art = card.art
+    ? `<img class="battle-art-img" src="${esc(card.art)}" alt="" />`
+    : `<div class="battle-art-emoji">${esc(card.emoji)}</div>`;
+  return `
+  <div class="battle-combatant ${isPlayer ? "is-player" : "is-enemy"}">
+    <div class="battle-combatant-head">
+      <span class="battle-combatant-attr" style="--attr-color:${attr.color}">${attr.emoji} ${attr.name}</span>
+      <span class="battle-combatant-name">${esc(card.name)}</span>
+    </div>
+    <div class="battle-art">${art}</div>
+    <div class="battle-hp-row">
+      <div class="ts-hp-track"><div class="ts-hp-fill" style="width:${hpPct}%"></div></div>
+      <span class="battle-hp-text">${Math.max(0, hp)}/${maxHp}</span>
+    </div>
+    ${energy != null ? `<div class="battle-energy">${"💠".repeat(energy)}<span class="battle-energy-label">已附加能量</span></div>` : ""}
+  </div>`;
+}
+
+function renderBattleModal() {
+  const b = S.battle;
+  return `
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal battle-modal" id="modalBox">
+      <div class="modal-head"><span>⚔️ 遭遇戰：${esc(b.enemyName)}</span></div>
+
+      ${b.phase === "pick" ? renderBattlePick(b) : ""}
+      ${b.phase === "loading" ? `<div class="loading" style="padding:20px 0;text-align:center">正在判定「${esc(b.enemyName)}」的實力…</div>` : ""}
+      ${b.phase === "fight" || b.phase === "result" ? renderBattleFight(b) : ""}
+    </div>
+  </div>`;
+}
+
+function renderBattlePick(b) {
+  const eligible = battleEligibleItems();
+  if (!eligible.length) {
+    return `
+    <div class="modal-hint">${esc(b.enemyDesc)}</div>
+    <div class="modal-hint" style="margin-top:10px">你目前沒有任何卡片化的造物可以應戰——先去「🃏 卡牌」分頁把至少一件造物做成卡片，或這次設法迴避。</div>
+    <div class="save-actions" style="margin-top:12px">
+      <button class="btn ghost small" id="battleFleeBtn">設法迴避這場戰鬥</button>
+    </div>`;
+  }
+  const rows = eligible.map(({ it, i }) => `
+    <button class="ia-item-row" data-act="battle-pick" data-idx="${i}">
+      ${it.art ? `<img class="ia-item-art" src="${esc(it.art)}" alt="" />` : `<span class="ia-item-emoji">${esc(itemEmoji(it))}</span>`}
+      <span class="ia-item-name">${esc(it.name)}</span>
+      <span class="battle-pick-rarity">${it.card.rarity}</span>
+    </button>`).join("");
+  return `
+  <div class="modal-hint">${esc(b.enemyDesc)}</div>
+  <div class="modal-hint" style="margin:8px 0 4px">選一張卡出戰：</div>
+  <div class="ia-item-grid">${rows}</div>
+  ${b.error ? `<div class="key-status bad" style="margin-top:8px">${esc(b.error)}</div>` : ""}
+  <div class="save-actions" style="margin-top:12px">
+    <button class="btn ghost small" id="battleFleeBtn">設法迴避這場戰鬥</button>
+  </div>`;
+}
+
+function renderBattleFight(b) {
+  const resultBanner = b.result && b.result !== "fled"
+    ? `<div class="craft-banner ${b.result === "win" ? "success" : "fail"}">${b.result === "win" ? "🏆 勝利！" : "💥 落敗……"}</div>`
+    : "";
+  const skillButtons = b.playerCard.skills.map((s, i) => {
+    const affordable = s.cost <= b.playerEnergy && !b.result;
+    return `<button class="battle-skill-btn" data-act="battle-skill" data-idx="${i}" ${affordable ? "" : "disabled"}>
+      <span class="tcg-skill-cost">${"💠".repeat(s.cost)}</span>
+      <span class="tcg-skill-name">${esc(s.name)}</span>
+      <span class="tcg-skill-dmg">${s.damage}</span>
+    </button>`;
+  }).join("");
+  return `
+  <div class="battle-vs">
+    ${renderBattleCombatant(b.enemyCard, b.enemyHp, b.enemyMaxHp, b.enemyEnergy, false)}
+    <div class="battle-vs-divider">VS</div>
+    ${renderBattleCombatant(b.playerCard, b.playerHp, b.playerMaxHp, b.playerEnergy, true)}
+  </div>
+  <div class="battle-log">${b.log.map((l) => `<div class="battle-log-line">${esc(l)}</div>`).join("")}</div>
+  ${resultBanner}
+  ${!b.result ? `<div class="battle-skills">${skillButtons}</div>` : `
+    <div class="save-actions" style="margin-top:10px">
+      <button class="btn primary" id="battleContinueBtn">繼續故事 →</button>
+    </div>`}
+  `;
+}
+
 function travelTo(locId) {
   const loc = LOCATIONS[locId];
   if (!loc || S.loading) return;
@@ -2042,6 +2307,7 @@ function renderModal() {
   if (S.modal === "novel") { root.innerHTML = renderNovelModal(); return; }
   if (S.modal === "share") { root.innerHTML = renderShareModal(); return; }
   if (S.modal === "ia") { root.innerHTML = renderIaModal(); return; }
+  if (S.modal === "battle" && S.battle) { root.innerHTML = renderBattleModal(); return; }
   if (S.modal !== "settings") { root.innerHTML = ""; return; }
   const key = getApiKey();
   const masked = key ? key.slice(0, 4) + "••••••••" + key.slice(-4) : "";
@@ -2393,9 +2659,15 @@ function bindEvents() {
 function bindModalEvents() {
   const overlay = document.getElementById("modalOverlay");
   if (!overlay) return;
-  overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
-  const modalCloseBtn = document.getElementById("modalCloseBtn");
-  if (modalCloseBtn) modalCloseBtn.onclick = closeModal;
+  // A battle in progress must be resolved through its own flee/continue
+  // buttons — tapping the backdrop or an X here would abandon it with
+  // S.battle still set, silently blocking every future battle trigger and
+  // never reporting an outcome back to the GM.
+  if (S.modal !== "battle") {
+    overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
+    const modalCloseBtn = document.getElementById("modalCloseBtn");
+    if (modalCloseBtn) modalCloseBtn.onclick = closeModal;
+  }
 
   const apiKeyInput = document.getElementById("apiKeyInput");
   const toggleKeyVis = document.getElementById("toggleKeyVis");
@@ -2525,6 +2797,18 @@ function bindModalEvents() {
   }
   const shareDownloadBtn = document.getElementById("shareDownloadBtn");
   if (shareDownloadBtn) shareDownloadBtn.onclick = () => downloadShareText();
+
+  // battle modal
+  document.querySelectorAll('[data-act="battle-pick"]').forEach((btn) => {
+    btn.onclick = () => pickBattleCard(parseInt(btn.dataset.idx, 10));
+  });
+  document.querySelectorAll('[data-act="battle-skill"]').forEach((btn) => {
+    btn.onclick = () => useBattleSkill(parseInt(btn.dataset.idx, 10));
+  });
+  const battleFleeBtn = document.getElementById("battleFleeBtn");
+  if (battleFleeBtn) battleFleeBtn.onclick = () => fleeBattle();
+  const battleContinueBtn = document.getElementById("battleContinueBtn");
+  if (battleContinueBtn) battleContinueBtn.onclick = () => closeBattleAndReport();
 }
 
 // ---------- cloud auth listener ----------
