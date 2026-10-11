@@ -674,63 +674,139 @@ async function callGeminiOneShot(prompt, maxOutputTokens) {
   return parts.map((p) => p.text || "").join("\n");
 }
 
-// Cost and damage are rolled here, by the frontend, BEFORE the model is
-// asked for anything — never taken from whatever number the model feels
-// like writing. Once a real battle engine computes outcomes from these
-// numbers, letting the model freely invent them would make "the frontend
-// computes battles" meaningless, since the balance would still secretly be
-// whatever the model wrote. The model only gets to name the two already-
-// fixed skills and write flavor text that fits the numbers it's told.
-function rollSkillSpecs() {
-  const basic = { cost: 1, damage: 8 + Math.floor(Math.random() * 5) }; // 8-12
-  const sigCost = 2 + Math.floor(Math.random() * 3); // 2-4
-  const signature = { cost: sigCost, damage: 10 + sigCost * 4 + Math.floor(Math.random() * 5) }; // scales with cost
-  return [basic, signature];
-}
-
-function cardPromptFor(item, specs) {
+function cardPromptFor(item) {
   const attrList = Object.entries(CARD_ATTRIBUTES).map(([k, a]) => `${k}=${a.name}(${a.pos})`).join("、");
-  return `你是一款桌遊的卡牌設計師，要把一件奇幻煉金世界裡的「造物」改編成一張類似寶可夢卡牌的對戰卡。
+  return `你是一款集換式卡牌遊戲的設計師，要把一件奇幻煉金世界裡的「造物」改編成一張卡牌。
 
 造物資料：
 名稱：${item.name}
 效果/描述：${item.desc || "（無特別描述）"}
 
-請完成以下三件事：
-1. 從這8個屬性裡，挑一個最貼合這件造物氣質的（只能選一個，直接給key）：
-${attrList}
-2. 這張卡已經有兩個「數值固定、你不能更改」的技能，你只需要幫它們各取一個
-   符合威力感的名稱、寫一句效果描述。數值是遊戲系統先決定好的，不是你決定：
-   - 技能1（入門技能）：消耗${specs[0].cost}點魔力，造成${specs[0].damage}點傷害——
-     威力較低、消耗也低，取名跟描述要呼應這是比較基礎、常用的招式。
-   - 技能2（招牌技能）：消耗${specs[1].cost}點魔力，造成${specs[1].damage}點傷害——
-     這張卡最強的招式，取名跟描述要呼應這是更強、更有份量的大招。
-   效果描述（20字以內，繁體中文）可以自然帶入下面這些標準效果詞彙裡的0~1個
-   （不要硬塞，沒有特別效果就純粹描述傷害手感即可，不要自己編數字）：
-   ${CARD_STATUS_EFFECTS.join("、")}
-3. 寫一句卡牌風味文字（flavor，15~30字，營造氣氛即可，不要提到任何數字）
+請先判斷這件造物比較適合做成哪一種卡：
+- "battle"：有血量與兩個技能的戰鬥卡（像寶可夢一樣的怪獸卡），適合武器、
+  生物、具攻擊性或防禦性的造物。
+- "effect"：沒有血量/技能，從手牌直接打出就能提供一次性效果的輔助卡，
+  適合藥水、符咒、工具一類偏輔助、消耗性質的造物。
 
-只回傳一個JSON物件，不要有任何其他文字、不要用markdown code fence包起來，格式必須完全符合（技能的cost/damage不用回傳，前端已經有了）：
-{"attribute":"entity","skill1Name":"...","skill1Effect":"...","skill2Name":"...","skill2Effect":"...","flavor":"..."}`;
+如果判斷是battle，額外完成：
+1. 從這8個屬性裡選一個最貼合的（直接給key）：${attrList}
+2. 設計兩個技能，兩個要有明顯區隔（一個便宜威力普通、一個較貴威力強），
+   不要雷同。每個技能：
+   - name：技能名稱（4~10字，中二一點沒關係）
+   - cost：消耗魔力，1~4之間的整數
+   - damage：傷害值，6~26之間的整數，請讓傷害大致跟消耗成正比（消耗低
+     的技能傷害也該偏低，消耗高的技能傷害該明顯更高，不要出現「消耗1卻
+     打到26」這種不合理的性價比）
+   - effect：一句話效果描述（20字以內），可自然帶入下面這些標準效果詞彙
+     裡的0~1個（不要硬塞，沒有特別效果就純粹描述傷害手感即可）：
+     ${CARD_STATUS_EFFECTS.join("、")}
+
+如果判斷是effect，額外完成：
+1. 從這三種效果裡選一個最貼合的（直接給key）：
+   - heal：立即治療，回復8~20點血量（給一個value數字）
+   - draw：立即從牌庫多抽一張牌（value給0即可）
+   - retreatDiscount：下次撤回卡牌所需的能量減少1點（value給0即可）
+2. effectDesc：一句簡短的效果描述（20字以內）
+
+不管哪一種都要寫一句卡牌風味文字（flavor，15~30字，不要提到任何數字）
+
+只回傳一個JSON物件，不要有任何其他文字、不要用markdown code fence包起來，
+兩種格式擇一：
+battle類：{"kind":"battle","attribute":"entity","skills":[{"name":"...","cost":2,"damage":16,"effect":"..."},{"name":"...","cost":4,"damage":24,"effect":"..."}],"flavor":"..."}
+effect類：{"kind":"effect","effectType":"heal","value":15,"effectDesc":"...","flavor":"..."}`;
 }
 
-// Shared by both cardifyItem (player creations) and generateEnemyCardForBattle
-// (battle opponents) — rolls rarity/HP/skill numbers locally, asks the model
-// only for attribute + names + flavor text, and clamps every model-provided
-// string field defensively regardless of what comes back.
+// The model still designs every number on a battle card (cost, damage) and
+// picks the effect card's type — that was never the problem. The problem
+// was making sure whatever it writes actually, reliably reaches the battle
+// engine as a valid value, instead of silently vanishing behind a default
+// if the model returns a string, an out-of-range value, or omits a field.
+// clampInt() is the guarantee: it always returns a finite integer in range,
+// preferring the model's own value and only falling back when that value
+// genuinely isn't usable.
+function clampInt(value, fallback, min, max) {
+  if (value == null) return fallback; // Number(null) is 0, not NaN — must guard explicitly or a missing field silently becomes a real (wrong) value instead of falling back
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+function parseSkillsFromModel(rawSkills) {
+  const arr = Array.isArray(rawSkills) ? rawSkills : [];
+  return [0, 1].map((i) => {
+    const s = arr[i] || {};
+    return {
+      name: (typeof s.name === "string" && s.name.trim()) ? s.name.trim().slice(0, 14) : `技能${i + 1}`,
+      cost: clampInt(s.cost, 1, 1, 4),
+      damage: clampInt(s.damage, 10, 6, 26),
+      effect: typeof s.effect === "string" ? s.effect.trim().slice(0, 30) : "",
+    };
+  });
+}
+
+// Used for the player's own creations — the model may choose either card
+// kind. Rarity/HP are still rolled here by the frontend (cosmetic / vitals,
+// not something to trust an LLM's RNG for).
 async function generateCardData(sourceItem) {
-  const { roll, tier } = rollCardRarity();
-  const hp = rollCardHp();
-  const specs = rollSkillSpecs();
-  const raw = await callGeminiOneShot(cardPromptFor(sourceItem, specs), 500);
+  const raw = await callGeminiOneShot(cardPromptFor(sourceItem), 600);
   const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
   const parsed = JSON.parse(cleaned);
-  const attribute = CARD_ATTRIBUTES[parsed.attribute] ? parsed.attribute : "entity";
-  const skills = [
-    { name: String(parsed.skill1Name || "入門技").slice(0, 14), cost: specs[0].cost, damage: specs[0].damage, effect: String(parsed.skill1Effect || "").slice(0, 30) },
-    { name: String(parsed.skill2Name || "招牌技").slice(0, 14), cost: specs[1].cost, damage: specs[1].damage, effect: String(parsed.skill2Effect || "").slice(0, 30) },
-  ];
-  return { attribute, hp, skills, flavor: String(parsed.flavor || "").slice(0, 40), rarity: tier, rarityRoll: roll };
+  const { roll, tier } = rollCardRarity();
+  const flavor = typeof parsed.flavor === "string" ? parsed.flavor.trim().slice(0, 40) : "";
+
+  if (parsed.kind === "effect") {
+    const effectType = ["heal", "draw", "retreatDiscount"].includes(parsed.effectType) ? parsed.effectType : "heal";
+    const value = effectType === "heal" ? clampInt(parsed.value, 12, 8, 20) : 0;
+    return {
+      kind: "effect", effectType, value,
+      effectDesc: typeof parsed.effectDesc === "string" ? parsed.effectDesc.trim().slice(0, 30) : "",
+      flavor, rarity: tier, rarityRoll: roll,
+    };
+  }
+
+  return {
+    kind: "battle",
+    attribute: CARD_ATTRIBUTES[parsed.attribute] ? parsed.attribute : "entity",
+    hp: rollCardHp(),
+    skills: parseSkillsFromModel(parsed.skills),
+    flavor, rarity: tier, rarityRoll: roll,
+  };
+}
+
+function enemyCardPromptFor(name, desc) {
+  const attrList = Object.entries(CARD_ATTRIBUTES).map(([k, a]) => `${k}=${a.name}(${a.pos})`).join("、");
+  return `你是一款集換式卡牌遊戲的設計師，要把劇情中出現的敵人設計成一張戰鬥卡（一定要是戰鬥卡，不是輔助卡）。
+
+敵人資料：
+名稱：${name}
+描述：${desc || "（無特別描述）"}
+
+1. 從這8個屬性裡選一個最貼合的（直接給key）：${attrList}
+2. 設計兩個技能，兩個要有明顯區隔（一個便宜威力普通、一個較貴威力強）：
+   - name：技能名稱（4~10字）
+   - cost：消耗魔力，1~4之間的整數
+   - damage：傷害值，6~26之間的整數，請讓傷害大致跟消耗成正比
+   - effect：一句話效果描述（20字以內），可自然帶入下面這些標準效果詞彙
+     裡的0~1個：${CARD_STATUS_EFFECTS.join("、")}
+3. flavor：一句卡牌風味文字（15~30字，不要提到任何數字）
+
+只回傳一個JSON物件，不要有其他文字、不要用markdown code fence，格式：
+{"attribute":"entity","skills":[{"name":"...","cost":2,"damage":16,"effect":"..."},{"name":"...","cost":4,"damage":24,"effect":"..."}],"flavor":"..."}`;
+}
+
+// Enemy squad members are always battle cards — the enemy has no hand/deck
+// of its own to play support cards from, so there's no "kind" decision here.
+async function generateEnemyBattleCard(name, desc) {
+  const hp = rollCardHp();
+  const raw = await callGeminiOneShot(enemyCardPromptFor(name, desc), 500);
+  const cleaned = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  const parsed = JSON.parse(cleaned);
+  return {
+    name, emoji: "👹", art: null,
+    attribute: CARD_ATTRIBUTES[parsed.attribute] ? parsed.attribute : "entity",
+    skills: parseSkillsFromModel(parsed.skills),
+    hp, maxHp: hp, energy: 0,
+  };
 }
 
 async function cardifyItem(itemIndex) {
@@ -758,60 +834,81 @@ async function cardifyItem(itemIndex) {
   }
 }
 
-// ---------- battle (PTCGP-style single-card duel, frontend-computed) ----------
+// ---------- battle (PTCGP-Pocket-style deck/hand/field duel, frontend-computed) ----------
+// Deck of up to 10 cardified creations; 1 active + 3 bench field slots; a
+// hand drawn from the deck; energy attaches once per turn to a chosen field
+// card and is SPENT (deducted) when used to attack — unlike standard real
+// PTCG energy, per this project's own rules. First side to have 2 of their
+// own active cards knocked out loses, independent of how many cards remain
+// in deck/bench. The enemy has no hand/deck of its own — it's a simplified
+// pre-generated 2-card squad (active + 1 bench) that auto-plays every turn.
+const DECK_SIZE = 10;
+const BENCH_SIZE = 3; // + 1 active = 4 player field slots
+const OPENING_HAND = 4;
+const KO_LIMIT = 2;
+const RETREAT_COST = 1;
+const BATTLE_LOSS_HP_PENALTY = 12;
+
 function battleEligibleItems() {
   return (S.gameState.items || [])
     .map((it, i) => ({ it, i }))
     .filter(({ it }) => it.card);
 }
 
-function startBattle(info) {
-  if (S.battle) return; // already mid-battle, ignore a stray re-trigger
-  S.battle = {
-    enemyName: (info && info.enemyName) || "神秘敵人",
-    enemyDesc: (info && info.enemyDesc) || "",
-    phase: "pick", // pick | loading | fight | result
-    error: null,
-    playerItemIndex: null,
-    playerCard: null,
-    enemyCard: null,
-    playerHp: 0, enemyHp: 0,
-    playerMaxHp: 0, enemyMaxHp: 0,
-    playerEnergy: 0, enemyEnergy: 0,
-    log: [],
-    result: null, // "win" | "lose" | "fled" | null
-  };
-  S.modal = "battle";
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
-async function pickBattleCard(itemIndex) {
-  const b = S.battle;
-  const item = (S.gameState.items || [])[itemIndex];
-  if (!b || !item || !item.card) return;
-  b.playerItemIndex = itemIndex;
-  b.playerCard = {
-    name: item.name, emoji: itemEmoji(item), art: item.art || null,
-    attribute: item.card.attribute, skills: item.card.skills,
+function buildDeckCard(it, itemIndex) {
+  return { itemIndex, name: it.name, emoji: itemEmoji(it), art: it.art || null, card: it.card };
+}
+
+function startBattle(info) {
+  if (S.battle) return; // already mid-battle, ignore a stray re-trigger
+  const enemyName = (info && info.enemyName) || "神秘敵人";
+  const enemyDesc = (info && info.enemyDesc) || "";
+  const eligible = battleEligibleItems();
+  const allCards = shuffle(eligible.map(({ it, i }) => buildDeckCard(it, i))).slice(0, DECK_SIZE);
+
+  const base = {
+    enemyName, enemyDesc, error: null,
+    deck: [], hand: [], field: [null, null, null, null], playerKO: 0,
+    enemyField: [null, null], enemyKO: 0,
+    attachedThisTurn: false, retreatedThisTurn: false, retreatDiscount: false,
+    log: [], result: null,
   };
-  b.playerHp = item.card.hp;
-  b.playerMaxHp = item.card.hp;
-  b.playerEnergy = 1; // the player's turn-1 energy is already attached — they go first
-  b.phase = "loading";
-  render();
+
+  if (!allCards.length) {
+    S.battle = { ...base, phase: "empty" };
+    S.modal = "battle";
+    return;
+  }
+
+  const hand = allCards.slice(0, Math.min(OPENING_HAND, allCards.length));
+  const deck = allCards.slice(hand.length);
+  S.battle = { ...base, phase: "loading", deck, hand };
+  S.modal = "battle";
+  generateEnemySquad();
+}
+
+async function generateEnemySquad() {
+  const b = S.battle;
+  if (!b) return;
   try {
-    const enemy = await generateCardData({ name: b.enemyName, desc: b.enemyDesc });
-    b.enemyCard = {
-      name: b.enemyName, emoji: "👹", art: null,
-      attribute: enemy.attribute, skills: enemy.skills, rarity: enemy.rarity, rarityRoll: enemy.rarityRoll,
-    };
-    b.enemyHp = enemy.hp;
-    b.enemyMaxHp = enemy.hp;
-    b.enemyEnergy = 0;
+    const first = await generateEnemyBattleCard(b.enemyName, b.enemyDesc);
+    const second = await generateEnemyBattleCard(b.enemyName, b.enemyDesc);
+    b.enemyField[0] = first;
+    b.enemyField[1] = second;
     b.phase = "fight";
-    b.log = [`遭遇了「${b.enemyName}」！`];
+    b.log = [`遭遇了「${b.enemyName}」！從手牌部署一張造物卡到前排，開始戰鬥。`];
   } catch (e) {
     b.error = "生成對手失敗：" + (e.message || e);
-    b.phase = "pick";
+    b.phase = "empty"; // can't proceed without an opponent — let them flee out
   } finally {
     render();
   }
@@ -831,48 +928,200 @@ function attributeBeats(attackerKey, defenderKey) {
   return !!(atk && atk.beats === defenderKey);
 }
 
-// Energy attaches +1 per turn and is never spent by attacking (PTCGP energy
-// stays attached once placed) — this is computed entirely here, with no AI
-// involvement in who wins, by how much, or what happens next.
-function useBattleSkill(skillIndex) {
+function firstEmptyFieldSlot() {
+  const b = S.battle;
+  for (let i = 0; i < b.field.length; i++) if (!b.field[i]) return i;
+  return -1;
+}
+
+// Deploys a battle card from hand to the first empty field slot (active
+// before bench) — unlimited per turn, limited only by hand contents and
+// open slots.
+function deployHandCard(handIndex) {
   const b = S.battle;
   if (!b || b.phase !== "fight" || b.result) return;
-  const skill = b.playerCard.skills[skillIndex];
-  if (!skill || skill.cost > b.playerEnergy) return;
-
-  const beat = attributeBeats(b.playerCard.attribute, b.enemyCard.attribute);
-  const dmg = skill.damage + (beat ? 10 : 0);
-  b.enemyHp = Math.max(0, b.enemyHp - dmg);
-  b.log.push(`你使出「${skill.name}」，造成 ${dmg} 點傷害${beat ? "（屬性剋制 +10！）" : ""}。`);
-
-  if (b.enemyHp <= 0) {
-    b.result = "win";
-    b.log.push(`「${b.enemyCard.name}」被擊倒了！你獲勝了！`);
-    render();
-    return;
-  }
-
-  b.enemyEnergy += 1;
-  const affordable = b.enemyCard.skills.filter((s) => s.cost <= b.enemyEnergy);
-  const pool = affordable.length ? affordable : [b.enemyCard.skills[0]];
-  const eSkill = pool.reduce((a, c) => (c.damage > a.damage ? c : a));
-  const eBeat = attributeBeats(b.enemyCard.attribute, b.playerCard.attribute);
-  const eDmg = eSkill.damage + (eBeat ? 10 : 0);
-  b.playerHp = Math.max(0, b.playerHp - eDmg);
-  b.log.push(`「${b.enemyCard.name}」使出「${eSkill.name}」，對你造成 ${eDmg} 點傷害${eBeat ? "（屬性剋制 +10！）" : ""}。`);
-
-  if (b.playerHp <= 0) {
-    b.result = "lose";
-    b.log.push(`你的「${b.playerCard.name}」被擊倒了……`);
-    render();
-    return;
-  }
-
-  b.playerEnergy += 1;
+  const card = b.hand[handIndex];
+  if (!card || card.card.kind !== "battle") return;
+  const slot = firstEmptyFieldSlot();
+  if (slot === -1) return;
+  b.field[slot] = {
+    itemIndex: card.itemIndex, name: card.name, emoji: card.emoji, art: card.art,
+    attribute: card.card.attribute, skills: card.card.skills,
+    hp: card.card.hp, maxHp: card.card.hp, energy: 0,
+  };
+  b.hand = b.hand.filter((_, i) => i !== handIndex);
+  b.log.push(`部署了「${card.name}」到${slot === 0 ? "前排" : "後排"}。`);
   render();
 }
 
-const BATTLE_LOSS_HP_PENALTY = 12;
+// Effect cards play immediately from hand and are discarded — unlimited per
+// turn, limited only by hand contents.
+function useEffectCard(handIndex) {
+  const b = S.battle;
+  if (!b || b.phase !== "fight" || b.result) return;
+  const card = b.hand[handIndex];
+  if (!card || card.card.kind !== "effect") return;
+  const c = card.card;
+  if (c.effectType === "heal") {
+    if (!b.field[0]) { b.log.push(`「${card.name}」沒有前排目標可以治療，效果浪費了。`); }
+    else {
+      b.field[0].hp = Math.min(b.field[0].maxHp, b.field[0].hp + c.value);
+      b.log.push(`使用「${card.name}」，前排回復了 ${c.value} 點HP。`);
+    }
+  } else if (c.effectType === "draw") {
+    if (b.deck.length) {
+      b.hand.push(b.deck.shift());
+      b.log.push(`使用「${card.name}」，多抽了一張牌。`);
+    } else {
+      b.log.push(`使用「${card.name}」，但牌庫已經空了。`);
+    }
+  } else if (c.effectType === "retreatDiscount") {
+    b.retreatDiscount = true;
+    b.log.push(`使用「${card.name}」，下次撤回所需能量減少1點。`);
+  }
+  b.hand = b.hand.filter((_, i) => i !== handIndex);
+  render();
+}
+
+// Once per turn: attach 1 energy to any one field card (active or bench).
+function attachEnergyTo(slotIndex) {
+  const b = S.battle;
+  if (!b || b.phase !== "fight" || b.result || b.attachedThisTurn) return;
+  const slot = b.field[slotIndex];
+  if (!slot) return;
+  slot.energy += 1;
+  b.attachedThisTurn = true;
+  b.log.push(`為「${slot.name}」附加了1點能量。`);
+  render();
+}
+
+// Retreat: current active swaps out for a chosen bench card, paying
+// RETREAT_COST energy from the retreating (outgoing) active — once per turn,
+// discounted to free by a banked retreatDiscount effect.
+function retreatTo(benchSlotIndex) {
+  const b = S.battle;
+  if (!b || b.phase !== "fight" || b.result || b.retreatedThisTurn) return;
+  if (benchSlotIndex < 1 || benchSlotIndex >= b.field.length) return;
+  const active = b.field[0];
+  const bench = b.field[benchSlotIndex];
+  if (!active || !bench) return;
+  const cost = b.retreatDiscount ? Math.max(0, RETREAT_COST - 1) : RETREAT_COST;
+  if (active.energy < cost) return;
+  active.energy -= cost;
+  if (b.retreatDiscount) b.retreatDiscount = false;
+  b.field[0] = bench;
+  b.field[benchSlotIndex] = active;
+  b.retreatedThisTurn = true;
+  b.log.push(`撤回了「${active.name}」，換「${bench.name}」上前排。`);
+  render();
+}
+
+function enemyPromoteIfNeeded() {
+  const b = S.battle;
+  if (!b.enemyField[0] && b.enemyField[1]) {
+    b.enemyField[0] = b.enemyField[1];
+    b.enemyField[1] = null;
+    b.log.push(`「${b.enemyField[0].name}」被派上了前排。`);
+  }
+}
+
+function playerPromoteIfNeeded() {
+  const b = S.battle;
+  if (!b.field[0]) {
+    const benchIdx = b.field.findIndex((s, i) => i > 0 && s);
+    if (benchIdx !== -1) {
+      b.field[0] = b.field[benchIdx];
+      b.field[benchIdx] = null;
+      b.log.push(`「${b.field[0].name}」被派上了前排。`);
+    }
+  }
+}
+
+function checkBattleOutcome() {
+  const b = S.battle;
+  if (b.enemyKO >= KO_LIMIT) { b.result = "win"; b.log.push(`「${b.enemyName}」倒下兩張戰鬥卡，你獲勝了！`); return true; }
+  if (b.playerKO >= KO_LIMIT) { b.result = "lose"; b.log.push(`你倒下了兩張戰鬥卡，落敗了……`); return true; }
+  return false;
+}
+
+function resolveEnemyTurn() {
+  const b = S.battle;
+  if (b.result) return;
+  if (!b.enemyField[0]) { enemyPromoteIfNeeded(); }
+  const active = b.enemyField[0];
+  if (!active) { checkBattleOutcome(); return; } // no cards left at all — shouldn't happen given KO_LIMIT, but stay safe
+  active.energy += 1;
+  const affordable = active.skills.filter((s) => s.cost <= active.energy);
+  const pool = affordable.length ? affordable : [active.skills[0]];
+  const skill = pool.reduce((a, c) => (c.damage > a.damage ? c : a));
+  active.energy -= skill.cost;
+
+  const target = b.field[0];
+  if (target) {
+    const beat = attributeBeats(active.attribute, target.attribute);
+    const dmg = skill.damage + (beat ? 10 : 0);
+    target.hp = Math.max(0, target.hp - dmg);
+    b.log.push(`「${active.name}」使出「${skill.name}」，對「${target.name}」造成 ${dmg} 點傷害${beat ? "（屬性剋制 +10！）" : ""}。`);
+    if (target.hp <= 0) {
+      b.log.push(`「${target.name}」倒下了！`);
+      b.field[0] = null;
+      b.playerKO += 1;
+      if (checkBattleOutcome()) return;
+      playerPromoteIfNeeded();
+    }
+  } else {
+    b.log.push(`「${active.name}」蓄勢待發，但你的前排是空的。`);
+  }
+
+  // new round for the player
+  b.attachedThisTurn = false;
+  b.retreatedThisTurn = false;
+  if (b.deck.length) {
+    b.hand.push(b.deck.shift());
+    b.log.push("抽了一張牌。");
+  }
+}
+
+// Attacking ends the player's turn — same as real TCG rules (attack is
+// always the last action you take). Energy spent on the attack is deducted,
+// not left attached.
+function attackWithSkill(skillIndex) {
+  const b = S.battle;
+  if (!b || b.phase !== "fight" || b.result) return;
+  const attacker = b.field[0];
+  if (!attacker) return;
+  const skill = attacker.skills[skillIndex];
+  if (!skill || skill.cost > attacker.energy) return;
+
+  attacker.energy -= skill.cost;
+  const defender = b.enemyField[0];
+  if (defender) {
+    const beat = attributeBeats(attacker.attribute, defender.attribute);
+    const dmg = skill.damage + (beat ? 10 : 0);
+    defender.hp = Math.max(0, defender.hp - dmg);
+    b.log.push(`你的「${attacker.name}」使出「${skill.name}」，對「${defender.name}」造成 ${dmg} 點傷害${beat ? "（屬性剋制 +10！）" : ""}。`);
+    if (defender.hp <= 0) {
+      b.log.push(`「${defender.name}」倒下了！`);
+      b.enemyField[0] = null;
+      b.enemyKO += 1;
+      if (checkBattleOutcome()) { render(); return; }
+      enemyPromoteIfNeeded();
+    }
+  }
+
+  resolveEnemyTurn();
+  render();
+}
+
+// Passing without attacking is legal (set up board, attach energy, then end
+// turn) — still hands control to the enemy afterward.
+function endTurnWithoutAttack() {
+  const b = S.battle;
+  if (!b || b.phase !== "fight" || b.result) return;
+  b.log.push("結束了回合，沒有發動攻擊。");
+  resolveEnemyTurn();
+  render();
+}
 
 // Hands the outcome back to the GM as a plain fact it must accept, not
 // re-adjudicate — same pattern as the dice-roll and ground-truth-inventory
@@ -883,7 +1132,7 @@ function closeBattleAndReport() {
   let summary;
   if (b.result === "fled") {
     summary = `（戰鬥結算：我選擇不正面應戰「${b.enemyName}」，設法迴避或用其他方式應對，請依此繼續劇情，不要描述一場正式的卡牌戰鬥。）`;
-  } else if (!b.playerCard || !b.enemyCard) {
+  } else if (b.phase === "empty") {
     summary = `（戰鬥結算：我目前沒有任何卡片化的造物可以應戰「${b.enemyName}」，只能設法迴避或用其他方式應對這個威脅，請依此調整劇情，不要用卡牌戰鬥的方式描述。）`;
   } else {
     const win = b.result === "win";
@@ -892,7 +1141,7 @@ function closeBattleAndReport() {
       S.gameState.hp = Math.max(0, S.gameState.hp - BATTLE_LOSS_HP_PENALTY);
       hpNote = `，我的角色因此損失了${BATTLE_LOSS_HP_PENALTY}點HP`;
     }
-    summary = `（戰鬥結算：我用「${b.playerCard.name}」迎戰「${b.enemyCard.name}」，結果${win ? "獲勝" : "落敗"}${hpNote}。請依照這個結果繼續寫劇情，不要重新判定這場戰鬥的輸贏。）`;
+    summary = `（戰鬥結算：我方戰鬥卡對戰「${b.enemyName}」一方，結果${win ? "獲勝" : "落敗"}${hpNote}（倒下計數：我方${b.playerKO}、敵方${b.enemyKO}，先到2倒下的一方輸）。請依照這個結果繼續寫劇情，不要重新判定這場戰鬥的輸贏。）`;
   }
   S.modal = null;
   S.battle = null;
@@ -2141,15 +2390,40 @@ function renderMap() {
 }
 
 // ---------- cards tab ----------
-function renderTcgCard(item) {
-  const c = item.card;
-  const attr = CARD_ATTRIBUTES[c.attribute] || CARD_ATTRIBUTES.entity;
-  const rarityMeta = CARD_RARITY_META[c.rarity] || CARD_RARITY_META.R;
+const EFFECT_CARD_META = {
+  heal: { emoji: "💚", label: "治療" },
+  draw: { emoji: "🔮", label: "抽牌" },
+  retreatDiscount: { emoji: "🪽", label: "撤回折扣" },
+};
+
+function tcgCardArt(item) {
   const art = item.art
     ? `<img class="tcg-art-img" src="${esc(item.art)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />`
     : "";
-  const artFallback = `<div class="tcg-art-emoji" ${item.art ? 'style="display:none"' : ""}>${esc(itemEmoji(item))}</div>`;
+  const fallback = `<div class="tcg-art-emoji" ${item.art ? 'style="display:none"' : ""}>${esc(itemEmoji(item))}</div>`;
+  return art + fallback;
+}
 
+function renderTcgCard(item) {
+  const c = item.card;
+  const rarityMeta = CARD_RARITY_META[c.rarity] || CARD_RARITY_META.R;
+
+  if (c.kind === "effect") {
+    const em = EFFECT_CARD_META[c.effectType] || EFFECT_CARD_META.heal;
+    return `
+    <div class="tcg-card rarity-${c.rarity} tcg-effect-card">
+      <div class="tcg-card-head">
+        <span class="tcg-card-name">${esc(item.name)}</span>
+        <span class="tcg-card-hp">${em.emoji} ${em.label}</span>
+      </div>
+      <div class="tcg-art">${tcgCardArt(item)}</div>
+      <div class="tcg-skills"><div class="tcg-skill"><div class="tcg-skill-effect">${esc(c.effectDesc || "")}</div></div></div>
+      ${c.flavor ? `<div class="tcg-flavor">${esc(c.flavor)}</div>` : ""}
+      <div class="tcg-rarity-tag">${rarityMeta.label}</div>
+    </div>`;
+  }
+
+  const attr = CARD_ATTRIBUTES[c.attribute] || CARD_ATTRIBUTES.entity;
   const skillsHtml = c.skills.map((s) => `
     <div class="tcg-skill">
       <div class="tcg-skill-head">
@@ -2169,7 +2443,7 @@ function renderTcgCard(item) {
     <div class="tcg-card-attr" style="--attr-color:${attr.color}">
       <span>${attr.emoji}</span><span>${attr.name}</span>
     </div>
-    <div class="tcg-art">${art}${artFallback}</div>
+    <div class="tcg-art">${tcgCardArt(item)}</div>
     <div class="tcg-skills">${skillsHtml}</div>
     ${c.flavor ? `<div class="tcg-flavor">${esc(c.flavor)}</div>` : ""}
     <div class="tcg-rarity-tag">${rarityMeta.label}</div>
@@ -2201,30 +2475,68 @@ function renderCards() {
   return `
   <div class="tab-cards">
     <div class="map-hint" style="margin-bottom:10px">
-      點「卡片化」把造物變成對戰卡——稀有度用100面骰決定（70以下R卡、71~89 SR金框、90~99 SSR彩框、100 UR全圖卡），純外觀，不影響技能強度。屬性與技能由AI依造物特性設計。
+      點「卡片化」把造物變成對戰卡或效果卡（由AI判斷哪種比較適合）——稀有度用100面骰決定（70以下R卡、71~89 SR金框、90~99 SSR彩框、100 UR全圖卡），純外觀，不影響技能強度。戰鬥時最多帶10張卡片化的造物組牌。
     </div>
     ${blocks}
   </div>`;
 }
 
-function renderBattleCombatant(card, hp, maxHp, energy, isPlayer) {
+function renderEnemyFieldSlot(card, index) {
+  if (!card) return `<div class="field-slot empty enemy ${index === 0 ? "is-active" : ""}">${index === 0 ? "前排（空）" : "後排（空）"}</div>`;
   const attr = CARD_ATTRIBUTES[card.attribute] || CARD_ATTRIBUTES.entity;
-  const hpPct = Math.max(0, Math.min(100, (hp / maxHp) * 100));
-  const art = card.art
-    ? `<img class="battle-art-img" src="${esc(card.art)}" alt="" />`
-    : `<div class="battle-art-emoji">${esc(card.emoji)}</div>`;
+  const hpPct = Math.max(0, Math.min(100, (card.hp / card.maxHp) * 100));
   return `
-  <div class="battle-combatant ${isPlayer ? "is-player" : "is-enemy"}">
-    <div class="battle-combatant-head">
-      <span class="battle-combatant-attr" style="--attr-color:${attr.color}">${attr.emoji} ${attr.name}</span>
-      <span class="battle-combatant-name">${esc(card.name)}</span>
+  <div class="field-slot enemy ${index === 0 ? "is-active" : ""}">
+    <div class="field-card-top">
+      <span class="field-attr" style="--attr-color:${attr.color}">${attr.emoji}</span>
+      <span class="field-name">${esc(card.name)}</span>
     </div>
-    <div class="battle-art">${art}</div>
-    <div class="battle-hp-row">
+    <div class="field-hp-row">
       <div class="ts-hp-track"><div class="ts-hp-fill" style="width:${hpPct}%"></div></div>
-      <span class="battle-hp-text">${Math.max(0, hp)}/${maxHp}</span>
+      <span class="field-hp-text">${card.hp}/${card.maxHp}</span>
     </div>
-    ${energy != null ? `<div class="battle-energy">${"💠".repeat(energy)}<span class="battle-energy-label">已附加能量</span></div>` : ""}
+    <div class="field-energy">${"💠".repeat(card.energy) || "－"}</div>
+  </div>`;
+}
+
+function renderPlayerFieldSlot(card, index, b) {
+  if (!card) return `<div class="field-slot empty ${index === 0 ? "is-active" : ""}">${index === 0 ? "前排（空）" : "後排（空）"}</div>`;
+  const attr = CARD_ATTRIBUTES[card.attribute] || CARD_ATTRIBUTES.entity;
+  const hpPct = Math.max(0, Math.min(100, (card.hp / card.maxHp) * 100));
+  const canAttach = !b.attachedThisTurn && !b.result;
+  const retreatCost = b.retreatDiscount ? Math.max(0, RETREAT_COST - 1) : RETREAT_COST;
+  const canRetreat = index !== 0 && b.field[0] && !b.retreatedThisTurn && b.field[0].energy >= retreatCost && !b.result;
+  return `
+  <div class="field-slot ${index === 0 ? "is-active" : ""}">
+    <div class="field-card-top">
+      <span class="field-attr" style="--attr-color:${attr.color}">${attr.emoji}</span>
+      <span class="field-name">${esc(card.name)}</span>
+    </div>
+    <div class="field-hp-row">
+      <div class="ts-hp-track"><div class="ts-hp-fill" style="width:${hpPct}%"></div></div>
+      <span class="field-hp-text">${card.hp}/${card.maxHp}</span>
+    </div>
+    <div class="field-energy">${"💠".repeat(card.energy) || "－"}</div>
+    <div class="field-actions">
+      <button class="field-mini-btn" data-act="attach-energy" data-idx="${index}" ${canAttach ? "" : "disabled"}>⚡附加</button>
+      ${index !== 0 ? `<button class="field-mini-btn" data-act="retreat-to" data-idx="${index}" ${canRetreat ? "" : "disabled"}>🔄上場(${retreatCost})</button>` : ""}
+    </div>
+  </div>`;
+}
+
+function renderHandCard(card, index, b) {
+  const isEffect = card.card.kind === "effect";
+  const slotsFree = firstEmptyFieldSlot() !== -1;
+  const enabled = !b.result && (isEffect || slotsFree);
+  const tagMeta = isEffect ? (EFFECT_CARD_META[card.card.effectType] || EFFECT_CARD_META.heal) : null;
+  return `
+  <div class="hand-card">
+    ${card.art ? `<img class="hand-card-art" src="${esc(card.art)}" alt="" />` : `<span class="hand-card-emoji">${esc(card.emoji)}</span>`}
+    <span class="hand-card-name">${esc(card.name)}</span>
+    <span class="hand-card-tag">${isEffect ? `${tagMeta.emoji} ${tagMeta.label}` : "⚔️ 戰鬥卡"}</span>
+    <button class="btn ghost small" data-act="${isEffect ? "use-effect" : "deploy-card"}" data-idx="${index}" ${enabled ? "" : "disabled"}>
+      ${isEffect ? "使用" : "部署"}
+    </button>
   </div>`;
 }
 
@@ -2234,35 +2546,17 @@ function renderBattleModal() {
   <div class="modal-overlay" id="modalOverlay">
     <div class="modal battle-modal" id="modalBox">
       <div class="modal-head"><span>⚔️ 遭遇戰：${esc(b.enemyName)}</span></div>
-
-      ${b.phase === "pick" ? renderBattlePick(b) : ""}
+      ${b.phase === "empty" ? renderBattleEmpty(b) : ""}
       ${b.phase === "loading" ? `<div class="loading" style="padding:20px 0;text-align:center">正在判定「${esc(b.enemyName)}」的實力…</div>` : ""}
-      ${b.phase === "fight" || b.phase === "result" ? renderBattleFight(b) : ""}
+      ${b.phase === "fight" ? renderBattleFight(b) : ""}
     </div>
   </div>`;
 }
 
-function renderBattlePick(b) {
-  const eligible = battleEligibleItems();
-  if (!eligible.length) {
-    return `
-    <div class="modal-hint">${esc(b.enemyDesc)}</div>
-    <div class="modal-hint" style="margin-top:10px">你目前沒有任何卡片化的造物可以應戰——先去「🃏 卡牌」分頁把至少一件造物做成卡片，或這次設法迴避。</div>
-    <div class="save-actions" style="margin-top:12px">
-      <button class="btn ghost small" id="battleFleeBtn">設法迴避這場戰鬥</button>
-    </div>`;
-  }
-  const rows = eligible.map(({ it, i }) => `
-    <button class="ia-item-row" data-act="battle-pick" data-idx="${i}">
-      ${it.art ? `<img class="ia-item-art" src="${esc(it.art)}" alt="" />` : `<span class="ia-item-emoji">${esc(itemEmoji(it))}</span>`}
-      <span class="ia-item-name">${esc(it.name)}</span>
-      <span class="battle-pick-rarity">${it.card.rarity}</span>
-    </button>`).join("");
+function renderBattleEmpty(b) {
   return `
   <div class="modal-hint">${esc(b.enemyDesc)}</div>
-  <div class="modal-hint" style="margin:8px 0 4px">選一張卡出戰：</div>
-  <div class="ia-item-grid">${rows}</div>
-  ${b.error ? `<div class="key-status bad" style="margin-top:8px">${esc(b.error)}</div>` : ""}
+  <div class="modal-hint" style="margin-top:10px">${b.error ? esc(b.error) : "你目前沒有任何卡片化的造物可以應戰——先去「🃏 卡牌」分頁把至少一件造物做成卡片，或這次設法迴避。"}</div>
   <div class="save-actions" style="margin-top:12px">
     <button class="btn ghost small" id="battleFleeBtn">設法迴避這場戰鬥</button>
   </div>`;
@@ -2272,26 +2566,48 @@ function renderBattleFight(b) {
   const resultBanner = b.result && b.result !== "fled"
     ? `<div class="craft-banner ${b.result === "win" ? "success" : "fail"}">${b.result === "win" ? "🏆 勝利！" : "💥 落敗……"}</div>`
     : "";
-  const skillButtons = b.playerCard.skills.map((s, i) => {
-    const affordable = s.cost <= b.playerEnergy && !b.result;
-    return `<button class="battle-skill-btn" data-act="battle-skill" data-idx="${i}" ${affordable ? "" : "disabled"}>
-      <span class="tcg-skill-cost">${"💠".repeat(s.cost)}</span>
-      <span class="tcg-skill-name">${esc(s.name)}</span>
-      <span class="tcg-skill-dmg">${s.damage}</span>
-    </button>`;
-  }).join("");
+
+  const enemyRow = [0, 1].map((i) => renderEnemyFieldSlot(b.enemyField[i], i)).join("");
+  const playerRow = [0, 1, 2, 3].map((i) => renderPlayerFieldSlot(b.field[i], i, b)).join("");
+
+  const attacker = b.field[0];
+  const skillButtons = attacker
+    ? attacker.skills.map((s, i) => {
+        const affordable = s.cost <= attacker.energy && !b.result;
+        return `<button class="battle-skill-btn" data-act="battle-skill" data-idx="${i}" ${affordable ? "" : "disabled"}>
+          <span class="tcg-skill-cost">${"💠".repeat(s.cost)}</span>
+          <span class="tcg-skill-name">${esc(s.name)}</span>
+          <span class="tcg-skill-dmg">${s.damage}</span>
+        </button>`;
+      }).join("")
+    : `<div class="inv-empty">前排是空的，請先從手牌部署一張戰鬥卡。</div>`;
+
+  const handRow = b.hand.map((c, i) => renderHandCard(c, i, b)).join("") || `<div class="inv-empty">手牌是空的。</div>`;
+
   return `
-  <div class="battle-vs">
-    ${renderBattleCombatant(b.enemyCard, b.enemyHp, b.enemyMaxHp, b.enemyEnergy, false)}
-    <div class="battle-vs-divider">VS</div>
-    ${renderBattleCombatant(b.playerCard, b.playerHp, b.playerMaxHp, b.playerEnergy, true)}
+  <div class="battle-ko-row">
+    <span>敵方倒下 ${b.enemyKO}/${KO_LIMIT}</span>
+    <span>我方倒下 ${b.playerKO}/${KO_LIMIT}</span>
+    <span>牌庫剩餘 ${b.deck.length}</span>
   </div>
-  <div class="battle-log">${b.log.map((l) => `<div class="battle-log-line">${esc(l)}</div>`).join("")}</div>
+  <div class="field-row enemy-row">${enemyRow}</div>
+  <div class="battle-vs-divider">VS</div>
+  <div class="field-row player-row">${playerRow}</div>
+
+  <div class="battle-log">${b.log.slice(-6).map((l) => `<div class="battle-log-line">${esc(l)}</div>`).join("")}</div>
   ${resultBanner}
-  ${!b.result ? `<div class="battle-skills">${skillButtons}</div>` : `
-    <div class="save-actions" style="margin-top:10px">
-      <button class="btn primary" id="battleContinueBtn">繼續故事 →</button>
-    </div>`}
+
+  ${!b.result ? `
+  <div class="modal-section-title" style="margin-top:8px">手牌（${b.hand.length}）</div>
+  <div class="hand-row">${handRow}</div>
+  <div class="modal-section-title" style="margin-top:8px">攻擊</div>
+  <div class="battle-skills">${skillButtons}</div>
+  <div class="save-actions" style="margin-top:8px">
+    <button class="btn ghost small" id="battleEndTurnBtn">結束回合（不攻擊）</button>
+  </div>` : `
+  <div class="save-actions" style="margin-top:10px">
+    <button class="btn primary" id="battleContinueBtn">繼續故事 →</button>
+  </div>`}
   `;
 }
 
@@ -2799,12 +3115,23 @@ function bindModalEvents() {
   if (shareDownloadBtn) shareDownloadBtn.onclick = () => downloadShareText();
 
   // battle modal
-  document.querySelectorAll('[data-act="battle-pick"]').forEach((btn) => {
-    btn.onclick = () => pickBattleCard(parseInt(btn.dataset.idx, 10));
+  document.querySelectorAll('[data-act="deploy-card"]').forEach((btn) => {
+    btn.onclick = () => deployHandCard(parseInt(btn.dataset.idx, 10));
+  });
+  document.querySelectorAll('[data-act="use-effect"]').forEach((btn) => {
+    btn.onclick = () => useEffectCard(parseInt(btn.dataset.idx, 10));
+  });
+  document.querySelectorAll('[data-act="attach-energy"]').forEach((btn) => {
+    btn.onclick = () => attachEnergyTo(parseInt(btn.dataset.idx, 10));
+  });
+  document.querySelectorAll('[data-act="retreat-to"]').forEach((btn) => {
+    btn.onclick = () => retreatTo(parseInt(btn.dataset.idx, 10));
   });
   document.querySelectorAll('[data-act="battle-skill"]').forEach((btn) => {
-    btn.onclick = () => useBattleSkill(parseInt(btn.dataset.idx, 10));
+    btn.onclick = () => attackWithSkill(parseInt(btn.dataset.idx, 10));
   });
+  const battleEndTurnBtn = document.getElementById("battleEndTurnBtn");
+  if (battleEndTurnBtn) battleEndTurnBtn.onclick = () => endTurnWithoutAttack();
   const battleFleeBtn = document.getElementById("battleFleeBtn");
   if (battleFleeBtn) battleFleeBtn.onclick = () => fleeBattle();
   const battleContinueBtn = document.getElementById("battleContinueBtn");
