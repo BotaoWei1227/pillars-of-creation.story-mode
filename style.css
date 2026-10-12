@@ -486,3 +486,17 @@ body {
 .battle-skill-btn .tcg-skill-dmg { font-size: 13px; }
 
 .tcg-effect-card .tcg-skills { justify-content: center; }
+
+/* ---------- deck editing ---------- */
+.deck-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  background: var(--bg-panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+}
+.deck-bar-count { font-family: 'Cinzel', serif; font-size: 13px; color: var(--brass-light); }
+.deck-bar-count.full { color: var(--success); }
+.deck-bar-actions { display: flex; gap: 6px; }
+.deck-bar-actions .btn.small { padding: 6px 10px; font-size: 11.5px; }
+.tcg-card-col { flex-direction: column; align-items: center; gap: 8px; }
+.tcg-card-col .deck-toggle { width: 100%; max-width: 280px; }
+.tcg-card-col.in-deck .tcg-card { outline: 2px solid var(--success); outline-offset: 2px; }
+.battle-status { font-size: 10.5px; line-height: 1.7; color: var(--ink-dim); margin-top: 8px; text-align: center; }

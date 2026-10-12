@@ -849,6 +849,61 @@ const KO_LIMIT = 2;
 const RETREAT_COST = 1;
 const BATTLE_LOSS_HP_PENALTY = 12;
 
+// ---------- deck editing (cards tab) ----------
+function deckCount() {
+  return (S.gameState.items || []).filter((it) => it.card && it.inDeck).length;
+}
+
+function toggleDeckMembership(itemIndex) {
+  const items = [...(S.gameState.items || [])];
+  const it = items[itemIndex];
+  if (!it || !it.card) return;
+  if (it.inDeck) {
+    items[itemIndex] = { ...it, inDeck: false };
+    S.deckMsg = null;
+  } else if (deckCount() >= DECK_SIZE) {
+    S.deckMsg = `牌組最多 ${DECK_SIZE} 張，請先移出一張再加入。`;
+    render();
+    return;
+  } else {
+    items[itemIndex] = { ...it, inDeck: true };
+    S.deckMsg = null;
+  }
+  S.gameState.items = items;
+  persistSave();
+  render();
+}
+
+function clearDeck() {
+  S.gameState.items = (S.gameState.items || []).map((it) => (it.inDeck ? { ...it, inDeck: false } : it));
+  S.deckMsg = null;
+  persistSave();
+  render();
+}
+
+// Fills the remaining slots with the newest cardified creations not already
+// in the deck — a shortcut, not a replacement for picking by hand.
+function autoFillDeck() {
+  const items = [...(S.gameState.items || [])];
+  let room = DECK_SIZE - deckCount();
+  for (let i = items.length - 1; i >= 0 && room > 0; i--) {
+    if (items[i].card && !items[i].inDeck) { items[i] = { ...items[i], inDeck: true }; room--; }
+  }
+  S.gameState.items = items;
+  S.deckMsg = null;
+  persistSave();
+  render();
+}
+
+// Cards cardified before the `kind` field existed have none — they're battle
+// cards (they carry skills). Every reader goes through this so a legacy card
+// can never be shown as deployable by the UI yet refused by the engine.
+function cardKind(card) {
+  if (card && (card.kind === "battle" || card.kind === "effect")) return card.kind;
+  if (card && card.effectType && !card.skills) return "effect";
+  return "battle";
+}
+
 function battleEligibleItems() {
   return (S.gameState.items || [])
     .map((it, i) => ({ it, i }))
@@ -868,12 +923,48 @@ function buildDeckCard(it, itemIndex) {
   return { itemIndex, name: it.name, emoji: itemEmoji(it), art: it.art || null, card: it.card };
 }
 
+// The player's chosen deck lives as an `inDeck` flag on the item itself, not
+// a list of indices — items get removed/added by the story (crafting, losses),
+// which would shift indices, but a flag travels with the item through saves
+// and cloud sync. If nothing has been chosen yet, fall back to the newest
+// cardified creations so a player who never opens deck editing can still fight.
+function pickBattleDeck(items) {
+  const cardified = (items || []).map((it, i) => ({ it, i })).filter(({ it }) => it.card);
+  let chosen = cardified.filter(({ it }) => it.inDeck).slice(0, DECK_SIZE);
+  if (!chosen.length) chosen = cardified.slice(-DECK_SIZE);
+  // A deck with no battle card can never put anything on the field. Swap in
+  // the newest battle card (replacing the last pick if the deck is full).
+  if (chosen.length && !chosen.some(({ it }) => cardKind(it.card) === "battle")) {
+    const extra = [...cardified].reverse().find(({ it }) => cardKind(it.card) === "battle");
+    if (extra) {
+      if (chosen.length >= DECK_SIZE) chosen = chosen.slice(0, DECK_SIZE - 1);
+      chosen = [...chosen, extra];
+    }
+  }
+  return chosen;
+}
+
+// Opening hand always holds at least one battle card when the deck has one —
+// otherwise a bad shuffle strands the player with nothing to put on the field.
+function drawOpeningHand(cards) {
+  const hand = cards.slice(0, Math.min(OPENING_HAND, cards.length));
+  const rest = cards.slice(hand.length);
+  if (!hand.some((c) => cardKind(c.card) === "battle")) {
+    const ri = rest.findIndex((c) => cardKind(c.card) === "battle");
+    if (ri !== -1 && hand.length) {
+      const swapped = hand[hand.length - 1];
+      hand[hand.length - 1] = rest[ri];
+      rest[ri] = swapped;
+    }
+  }
+  return { hand, deck: rest };
+}
+
 function startBattle(info) {
   if (S.battle) return; // already mid-battle, ignore a stray re-trigger
   const enemyName = (info && info.enemyName) || "神秘敵人";
   const enemyDesc = (info && info.enemyDesc) || "";
-  const eligible = battleEligibleItems();
-  const allCards = shuffle(eligible.map(({ it, i }) => buildDeckCard(it, i))).slice(0, DECK_SIZE);
+  const allCards = shuffle(pickBattleDeck(S.gameState.items).map(({ it, i }) => buildDeckCard(it, i)));
 
   const base = {
     enemyName, enemyDesc, error: null,
@@ -889,8 +980,7 @@ function startBattle(info) {
     return;
   }
 
-  const hand = allCards.slice(0, Math.min(OPENING_HAND, allCards.length));
-  const deck = allCards.slice(hand.length);
+  const { hand, deck } = drawOpeningHand(allCards);
   S.battle = { ...base, phase: "loading", deck, hand };
   S.modal = "battle";
   generateEnemySquad();
@@ -941,9 +1031,9 @@ function deployHandCard(handIndex) {
   const b = S.battle;
   if (!b || b.phase !== "fight" || b.result) return;
   const card = b.hand[handIndex];
-  if (!card || card.card.kind !== "battle") return;
+  if (!card || cardKind(card.card) !== "battle") return;
   const slot = firstEmptyFieldSlot();
-  if (slot === -1) return;
+  if (slot === -1) { b.log.push("場上已經沒有空位了，先撤回或等有卡倒下再部署。"); render(); return; }
   b.field[slot] = {
     itemIndex: card.itemIndex, name: card.name, emoji: card.emoji, art: card.art,
     attribute: card.card.attribute, skills: card.card.skills,
@@ -960,7 +1050,7 @@ function useEffectCard(handIndex) {
   const b = S.battle;
   if (!b || b.phase !== "fight" || b.result) return;
   const card = b.hand[handIndex];
-  if (!card || card.card.kind !== "effect") return;
+  if (!card || cardKind(card.card) !== "effect") return;
   const c = card.card;
   if (c.effectType === "heal") {
     if (!b.field[0]) { b.log.push(`「${card.name}」沒有前排目標可以治療，效果浪費了。`); }
@@ -1574,6 +1664,7 @@ const S = {
   shareMsg: null,
   cardBusy: null, // index of the item currently being cardified, or null
   cardError: null, // { index, text } | null
+  deckMsg: null, // string | null — feedback from deck editing
   battle: null, // active battle state, see startBattle()
   // Infinite Alchemy Developer Platform import (see ia-oauth.js)
   iaProfile: null, // { id, workshopName, emblem, displayTitle } | null
@@ -2408,7 +2499,7 @@ function renderTcgCard(item) {
   const c = item.card;
   const rarityMeta = CARD_RARITY_META[c.rarity] || CARD_RARITY_META.R;
 
-  if (c.kind === "effect") {
+  if (cardKind(c) === "effect") {
     const em = EFFECT_CARD_META[c.effectType] || EFFECT_CARD_META.heal;
     return `
     <div class="tcg-card rarity-${c.rarity} tcg-effect-card">
@@ -2455,8 +2546,19 @@ function renderCards() {
   if (!items.length) {
     return `<div class="tab-cards"><div class="inv-empty">背包裡還沒有任何造物可以做成卡牌，先去煉製台做點東西吧。</div></div>`;
   }
+  const inDeck = deckCount();
+  const hasCards = items.some((it) => it.card);
+  const deckHasBattle = items.some((it) => it.card && it.inDeck && cardKind(it.card) === "battle");
   const blocks = items.map((item, i) => {
-    if (item.card) return `<div class="tcg-card-wrap">${renderTcgCard(item)}</div>`;
+    if (item.card) {
+      return `
+      <div class="tcg-card-wrap tcg-card-col ${item.inDeck ? "in-deck" : ""}">
+        ${renderTcgCard(item)}
+        <button class="btn ${item.inDeck ? "primary" : "ghost"} small deck-toggle" data-act="deck-toggle" data-idx="${i}">
+          ${item.inDeck ? "✓ 已在牌組（點擊移出）" : "＋ 加入牌組"}
+        </button>
+      </div>`;
+    }
     const busy = S.cardBusy === i;
     const err = S.cardError && S.cardError.index === i ? S.cardError.text : null;
     return `
@@ -2474,8 +2576,18 @@ function renderCards() {
   }).join("");
   return `
   <div class="tab-cards">
-    <div class="map-hint" style="margin-bottom:10px">
-      點「卡片化」把造物變成對戰卡或效果卡（由AI判斷哪種比較適合）——稀有度用100面骰決定（70以下R卡、71~89 SR金框、90~99 SSR彩框、100 UR全圖卡），純外觀，不影響技能強度。戰鬥時最多帶10張卡片化的造物組牌。
+    <div class="deck-bar">
+      <div class="deck-bar-count ${inDeck >= DECK_SIZE ? "full" : ""}">🃏 牌組 ${inDeck}/${DECK_SIZE}</div>
+      <div class="deck-bar-actions">
+        <button class="btn ghost small" id="deckAutoBtn" ${hasCards && inDeck < DECK_SIZE ? "" : "disabled"}>自動填滿</button>
+        <button class="btn ghost small" id="deckClearBtn" ${inDeck ? "" : "disabled"}>清空</button>
+      </div>
+    </div>
+    ${S.deckMsg ? `<div class="key-status bad">${esc(S.deckMsg)}</div>` : ""}
+    ${inDeck && !deckHasBattle ? `<div class="key-status bad">牌組裡沒有戰鬥卡——開戰時系統會自動補一張最新的戰鬥卡進去。</div>` : ""}
+    ${!inDeck && hasCards ? `<div class="map-hint">還沒選牌組：開戰時會自動帶最近卡片化的 ${DECK_SIZE} 張。想自己挑，就在卡片下方按「加入牌組」。</div>` : ""}
+    <div class="map-hint" style="margin-bottom:6px">
+      點「卡片化」把造物變成對戰卡或效果卡（由AI判斷哪種比較適合）——稀有度用100面骰決定（70以下R卡、71~89 SR金框、90~99 SSR彩框、100 UR全圖卡），純外觀，不影響技能強度。
     </div>
     ${blocks}
   </div>`;
@@ -2525,7 +2637,7 @@ function renderPlayerFieldSlot(card, index, b) {
 }
 
 function renderHandCard(card, index, b) {
-  const isEffect = card.card.kind === "effect";
+  const isEffect = cardKind(card.card) === "effect";
   const slotsFree = firstEmptyFieldSlot() !== -1;
   const enabled = !b.result && (isEffect || slotsFree);
   const tagMeta = isEffect ? (EFFECT_CARD_META[card.card.effectType] || EFFECT_CARD_META.heal) : null;
@@ -2562,6 +2674,27 @@ function renderBattleEmpty(b) {
   </div>`;
 }
 
+// Greyed-out buttons with no explanation read as "broken" — spell out what the
+// player can do right now and why anything is unavailable.
+function battleStatusHint(b) {
+  const parts = [];
+  if (!b.field[0]) {
+    parts.push(b.hand.some((c) => cardKind(c.card) === "battle")
+      ? "👉 前排是空的：先從手牌按「部署」放一張戰鬥卡"
+      : "前排是空的，手牌也沒有戰鬥卡（可用效果卡抽牌，或結束回合再抽）");
+  } else {
+    const a = b.field[0];
+    const cheapest = Math.min(...a.skills.map((sk) => sk.cost));
+    if (a.energy < cheapest) parts.push(b.attachedThisTurn
+      ? "前排能量不足，本回合已附加過能量，無法攻擊（可結束回合）"
+      : "👉 前排能量不足：先按「⚡附加」加能量才能攻擊");
+  }
+  parts.push(`能量附加 ${b.attachedThisTurn ? "已用" : "可用"}`);
+  parts.push(`撤回 ${b.retreatedThisTurn ? "已用" : "可用"}${b.retreatDiscount ? "（折扣中）" : ""}`);
+  if (firstEmptyFieldSlot() === -1) parts.push("場上已滿");
+  return parts.map((p) => esc(p)).join("　·　");
+}
+
 function renderBattleFight(b) {
   const resultBanner = b.result && b.result !== "fled"
     ? `<div class="craft-banner ${b.result === "win" ? "success" : "fail"}">${b.result === "win" ? "🏆 勝利！" : "💥 落敗……"}</div>`
@@ -2593,6 +2726,7 @@ function renderBattleFight(b) {
   <div class="field-row enemy-row">${enemyRow}</div>
   <div class="battle-vs-divider">VS</div>
   <div class="field-row player-row">${playerRow}</div>
+  ${!b.result ? `<div class="battle-status">${battleStatusHint(b)}</div>` : ""}
 
   <div class="battle-log">${b.log.slice(-6).map((l) => `<div class="battle-log-line">${esc(l)}</div>`).join("")}</div>
   ${resultBanner}
@@ -2917,6 +3051,13 @@ function bindEvents() {
   document.querySelectorAll('[data-act="cardify"]').forEach((btn) => {
     btn.onclick = () => cardifyItem(parseInt(btn.dataset.idx, 10));
   });
+  document.querySelectorAll('[data-act="deck-toggle"]').forEach((btn) => {
+    btn.onclick = () => toggleDeckMembership(parseInt(btn.dataset.idx, 10));
+  });
+  const deckAutoBtn = document.getElementById("deckAutoBtn");
+  if (deckAutoBtn) deckAutoBtn.onclick = () => autoFillDeck();
+  const deckClearBtn = document.getElementById("deckClearBtn");
+  if (deckClearBtn) deckClearBtn.onclick = () => clearDeck();
 
   // craft
   document.querySelectorAll('[data-act="pick"]').forEach((btn) => {
