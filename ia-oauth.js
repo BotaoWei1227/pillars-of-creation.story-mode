@@ -168,19 +168,57 @@
   // Fetches the player's own creations (things they personally invented via
   // crafting) — NOT their full inventory, which could include items they
   // received, bought, or traded rather than actually made themselves.
-  // Follows nextOffset, capped at a generous number of pages so a
-  // pathological response can't hang the UI.
-  async function fetchInventions() {
-    const items = [];
-    let offset = 0;
-    for (let page = 0; page < 20; page++) {
-      const data = await apiGet("developer-api/v1/inventions", { limit: 100, offset });
-      items.push(...(data.items || []));
-      if (data.nextOffset == null) break;
-      offset = data.nextOffset;
+  //
+  // Pages are requested at the documented maximum (limit=100) and followed
+  // strictly via the server's own `nextOffset` until it says there is no
+  // more — there is no client-side item cap. A 429 is retried with bounded
+  // exponential backoff + jitter (the documented rate limit is 120 req/60s
+  // per token), and items are de-duplicated by id. Why the loop stopped is
+  // recorded in lastFetchInfo so a "I only got N items" report can be told
+  // apart: server-end means the platform itself stopped paginating there.
+  const PAGE_LIMIT = 100;
+  const MAX_PAGES = 200; // 20,000 items — only a runaway-response safety net
+  let lastFetchInfo = null;
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  async function apiGetRetry(path, params) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await apiGet(path, params);
+      } catch (e) {
+        if (e && e.code === "rate_limited" && attempt < 5) {
+          await sleep(Math.min(16000, 1000 * 2 ** attempt) + Math.random() * 500);
+          continue;
+        }
+        throw e;
+      }
     }
-    return items;
   }
+
+  async function fetchInventions(onProgress) {
+    const byId = new Map();
+    let offset = 0;
+    let pages = 0;
+    let endedBy = "page-cap";
+    let rawCount = 0;
+    while (pages < MAX_PAGES) {
+      const data = await apiGetRetry("developer-api/v1/inventions", { limit: PAGE_LIMIT, offset });
+      pages++;
+      const items = Array.isArray(data.items) ? data.items : [];
+      rawCount += items.length;
+      for (const it of items) if (it && it.id != null && !byId.has(it.id)) byId.set(it.id, it);
+      if (onProgress) onProgress(byId.size);
+      if (data.nextOffset == null) { endedBy = "server-end"; break; }
+      if (!items.length) { endedBy = "empty-page"; break; }
+      if (Number(data.nextOffset) <= offset) { endedBy = "stalled"; break; }
+      offset = Number(data.nextOffset);
+    }
+    lastFetchInfo = { count: byId.size, rawCount, pages, endedBy, lastOffset: offset };
+    return [...byId.values()];
+  }
+
+  function getLastFetchInfo() { return lastFetchInfo; }
 
   window.IAOAuth = {
     isConfigured,
@@ -190,5 +228,6 @@
     disconnect,
     getProfile,
     fetchInventions,
+    getLastFetchInfo,
   };
 })();

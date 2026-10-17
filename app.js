@@ -819,31 +819,6 @@ async function generateEnemyBattleCard(name, desc) {
   };
 }
 
-async function cardifyItem(itemIndex) {
-  if (!getApiKey()) {
-    S.cardError = { index: itemIndex, text: "請先設定 Gemini API 金鑰。" };
-    render();
-    return;
-  }
-  const item = (S.gameState.items || [])[itemIndex];
-  if (!item) return;
-  S.cardBusy = itemIndex;
-  S.cardError = null;
-  render();
-  try {
-    const card = await generateCardData(item);
-    const items = [...S.gameState.items];
-    items[itemIndex] = { ...item, card };
-    S.gameState.items = items;
-    persistSave();
-  } catch (e) {
-    S.cardError = { index: itemIndex, text: "卡片化失敗：" + (e.message || e) };
-  } finally {
-    S.cardBusy = null;
-    render();
-  }
-}
-
 // ---------- battle (PTCGP-Pocket-style deck/hand/field duel, frontend-computed) ----------
 // Deck of up to 10 cardified creations; 1 active + 3 bench field slots; a
 // hand drawn from the deck; energy attaches once per turn to a chosen field
@@ -1672,9 +1647,15 @@ const S = {
   shareAuthorName: "",
   shareAuthorFocused: false,
   shareMsg: null,
-  cardBusy: null, // index of the item currently being cardified, or null
   cardError: null, // { index, text } | null
   deckMsg: null, // string | null — feedback from deck editing
+  cardsQuery: "",
+  cardsSearchFocused: false,
+  cardsFilter: "all", // all | pending | carded | deck
+  cardsSelected: {}, // index -> item name, for batch cardify
+  cardsShown: 60,
+  cardBatch: null, // { total, done, failed, running, error } | null
+  cardDetail: null, // item index shown in the card detail modal
   battle: null, // active battle state, see startBattle()
   // Infinite Alchemy Developer Platform import (see ia-oauth.js)
   iaProfile: null, // { id, workshopName, emblem, displayTitle } | null
@@ -1682,6 +1663,9 @@ const S = {
   iaSelected: {}, // { [item.id]: true } — which fetched items are checked for import
   iaQuery: "", // search text — only matching items are shown/importable, nothing is pre-selected
   iaSearchFocused: false,
+  iaProgress: 0,
+  iaFetchInfo: null,
+  iaShown: 100,
   iaBusy: false,
   iaMsg: null, // { type: "ok" | "bad", text }
 };
@@ -1759,15 +1743,21 @@ function iaFriendlyError(e) {
 
 async function iaRefreshProfileAndInventory() {
   S.iaBusy = true;
+  S.iaProgress = 0;
   render();
   try {
     S.iaProfile = await window.IAOAuth.getProfile();
-    S.iaInventions = await window.IAOAuth.fetchInventions();
+    S.iaInventions = await window.IAOAuth.fetchInventions((n) => {
+      S.iaProgress = n;
+      render(); // live "已讀取 N 件" counter
+    });
+    S.iaFetchInfo = window.IAOAuth.getLastFetchInfo();
     // Nothing is pre-selected — the player searches their own list and
     // explicitly picks what to import, rather than everything being staged
     // for transfer by default.
     S.iaSelected = {};
     S.iaQuery = "";
+    S.iaShown = IA_PAGE_SIZE;
   } catch (e) {
     if (e && e.code === "invalid_token") { S.iaProfile = null; S.iaInventions = []; }
     S.iaMsg = { type: "bad", text: iaFriendlyError(e) };
@@ -1775,6 +1765,24 @@ async function iaRefreshProfileAndInventory() {
     S.iaBusy = false;
     render();
   }
+}
+
+const IA_PAGE_SIZE = 100;
+
+function iaFilteredInventions() {
+  const q = S.iaQuery.trim().toLowerCase();
+  if (!q) return [];
+  return S.iaInventions.filter((it) => (it.name || "").toLowerCase().includes(q));
+}
+
+// Select / deselect every item matching the current search (not just the
+// rows currently drawn) — with hundreds of creations, ticking one by one is
+// not realistic, but "everything in your inventory" is still never the default.
+function iaSelectFiltered(on) {
+  const sel = { ...S.iaSelected };
+  for (const it of iaFilteredInventions()) { if (on) sel[it.id] = true; else delete sel[it.id]; }
+  S.iaSelected = sel;
+  render();
 }
 
 function iaToggleSelect(id) {
@@ -1827,7 +1835,7 @@ function iaImportSelected() {
     if (existingNames.has(it.name)) continue; // avoid obvious duplicates
     const art = typeof it.manifestationUrl === "string" && it.manifestationUrl.startsWith("https:")
       ? it.manifestationUrl : null;
-    imported.push({ name: it.name, emoji: it.emoji || "📦", desc: "從 Infinite Alchemy 匯入的真實造物", art });
+    imported.push({ name: it.name, emoji: it.emoji || "📦", desc: "", art, imported: true });
     existingNames.add(it.name);
   }
   st.items = [...(st.items || []), ...imported];
@@ -2095,15 +2103,82 @@ function pickMaterial(mat) {
 }
 
 // ---------- render ----------
+// render() throws away and rebuilds the whole #app and modal DOM on every
+// state change, which resets the scrollTop of every scrollable box to 0 —
+// that is the "page keeps jumping back up" bug: typing in a search box,
+// ticking a checkbox, collapsing the suggestions, anything. So every
+// scrollable container's position is captured before the swap and put back
+// afterwards. Positions are remembered per screen (tab) and per modal, so
+// returning to a tab also returns you to where you were, while a modal that
+// was closed and reopened starts from the top again.
+const APP_SCROLL_SELECTORS = [".log", ".tab-cards", ".cards-scroll", ".craft-grid", ".tab-status", ".tab-map"];
+const MODAL_SCROLL_SELECTORS = [".modal", ".ia-item-grid", ".hand-row", ".battle-log", ".share-preview-body", ".novel-textarea"];
+const appScrollMem = {};
+const modalScrollMem = {};
+let lastAppKey = null;
+let lastModalKey = "";
+let lastAnchoredLen = -1;
+
+function snapshotScroll(selectors, includeApp) {
+  const snap = {};
+  for (const sel of selectors) {
+    document.querySelectorAll(sel).forEach((el, i) => { snap[sel + "#" + i] = { top: el.scrollTop, left: el.scrollLeft }; });
+  }
+  if (includeApp) {
+    const app = document.getElementById("app");
+    if (app) snap["#app"] = { top: app.scrollTop, left: app.scrollLeft };
+  }
+  return snap;
+}
+
+function applyScroll(snap, selectors, includeApp) {
+  if (!snap) return;
+  for (const sel of selectors) {
+    document.querySelectorAll(sel).forEach((el, i) => {
+      const v = snap[sel + "#" + i];
+      if (v) { el.scrollTop = v.top; el.scrollLeft = v.left; }
+    });
+  }
+  if (includeApp && snap["#app"]) {
+    const app = document.getElementById("app");
+    if (app) { app.scrollTop = snap["#app"].top; app.scrollLeft = snap["#app"].left; }
+  }
+}
+
 function render() {
   const app = document.getElementById("app");
+
+  if (lastAppKey !== null) appScrollMem[lastAppKey] = snapshotScroll(APP_SCROLL_SELECTORS, true);
+  if (lastModalKey) modalScrollMem[lastModalKey] = snapshotScroll(MODAL_SCROLL_SELECTORS, false);
+
   if (S.stage === "intro") app.innerHTML = renderIntro();
   else if (S.stage === "alloc") app.innerHTML = renderAlloc();
   else if (S.stage === "ending") app.innerHTML = renderEnding();
   else app.innerHTML = renderGame();
   renderModal();
   bindEvents();
-  if (S.stage === "playing" && S.tab === "story") scrollLogToLastUser();
+
+  const appKey = S.stage + "|" + S.tab;
+  const modalKey = S.modal || "";
+  applyScroll(appScrollMem[appKey], APP_SCROLL_SELECTORS, true);
+  if (modalKey) {
+    if (modalKey !== lastModalKey) delete modalScrollMem[modalKey]; // freshly opened → top
+    applyScroll(modalScrollMem[modalKey], MODAL_SCROLL_SELECTORS, false);
+  }
+
+  // Pin the log to the player's last message only when something new
+  // actually arrived (their message / the reply) or there is no remembered
+  // position yet — not on every unrelated re-render, which is what made the
+  // chat jump while you were reading further up.
+  if (S.stage === "playing" && S.tab === "story") {
+    const remembered = appScrollMem[appKey] && appScrollMem[appKey][".log#0"];
+    if (S.messages.length !== lastAnchoredLen || !remembered) {
+      scrollLogToLastUser();
+      lastAnchoredLen = S.messages.length;
+    }
+  }
+  lastAppKey = appKey;
+  lastModalKey = modalKey;
 }
 
 // Keep the player's own last message pinned at the BOTTOM of the visible
@@ -2564,55 +2639,226 @@ function renderTcgCard(item) {
   </div>`;
 }
 
+// ---------- cards tab: pick items, batch-cardify, 3-up thumbnail grid ----------
+const CARDS_PAGE_SIZE = 60;
+const CARDS_FILTERS = [["all", "全部"], ["pending", "未卡片化"], ["carded", "已卡片化"], ["deck", "牌組"]];
+
+function cardSearchText(it) {
+  const parts = [it.name, it.desc];
+  const c = it.card;
+  if (!c) parts.push("未卡片化");
+  else if (cardKind(c) === "effect") {
+    const em = EFFECT_CARD_META[c.effectType];
+    parts.push("效果卡", em && em.label, c.effectDesc);
+  } else {
+    const at = CARD_ATTRIBUTES[c.attribute];
+    parts.push("戰鬥卡", at && at.name, at && at.pos, ...(c.skills || []).map((sk) => sk.name));
+  }
+  if (c && c.rarity) parts.push(c.rarity);
+  return parts.filter(Boolean).join(" ").toLowerCase();
+}
+
+function cardsMatching() {
+  const q = S.cardsQuery.trim().toLowerCase();
+  const f = S.cardsFilter;
+  return (S.gameState.items || []).map((it, i) => ({ it, i })).filter(({ it }) => {
+    if (f === "pending" && it.card) return false;
+    if (f === "carded" && !it.card) return false;
+    if (f === "deck" && !(it.card && it.inDeck)) return false;
+    return !q || cardSearchText(it).includes(q);
+  });
+}
+
+// Selection is remembered as index → name and only honoured while that index
+// still holds that same, still-uncardified item (the story can add/remove
+// items under us, which shifts indices).
+function cardsSelectedValid() {
+  const items = S.gameState.items || [];
+  return Object.keys(S.cardsSelected).map(Number).filter((i) => items[i] && !items[i].card && items[i].name === S.cardsSelected[i]);
+}
+
+function resetCardsScroll() {
+  const el = document.querySelector(".cards-scroll");
+  if (el) el.scrollTop = 0;
+  S.cardsShown = CARDS_PAGE_SIZE;
+}
+
+function toggleCardSelect(i) {
+  const it = (S.gameState.items || [])[i];
+  if (!it || it.card) return;
+  if (S.cardBatch && !S.cardBatch.running) S.cardBatch = null;
+  const sel = { ...S.cardsSelected };
+  if (sel[i] === it.name) delete sel[i]; else sel[i] = it.name;
+  S.cardsSelected = sel;
+  render();
+}
+
+function selectAllPendingMatches() {
+  const sel = { ...S.cardsSelected };
+  for (const { it, i } of cardsMatching()) if (!it.card) sel[i] = it.name;
+  S.cardsSelected = sel;
+  render();
+}
+
+function openCardDetail(i) {
+  const it = (S.gameState.items || [])[i];
+  if (!it || !it.card) return;
+  S.cardDetail = i;
+  S.modal = "carddetail";
+  render();
+}
+
+// Cardifies the picked items one at a time (sequential on purpose: each is a
+// Gemini call, and firing dozens at once just trips the rate limit). A rate
+// limit stops the run and keeps everything finished so far.
+async function cardifySelected() {
+  if (S.cardBatch && S.cardBatch.running) return;
+  if (!getApiKey()) {
+    S.cardError = { index: -1, text: "請先到 ⚙️ 設定貼上 Gemini API 金鑰。" };
+    render();
+    return;
+  }
+  const items0 = S.gameState.items || [];
+  const targets = cardsSelectedValid().map((i) => ({ name: items0[i].name }));
+  if (!targets.length) return;
+  const resolve = (name) => (S.gameState.items || []).findIndex((it) => it.name === name && !it.card);
+  S.cardError = null;
+  S.cardsSelected = {};
+  S.cardBatch = { total: targets.length, done: 0, failed: 0, running: true, error: null };
+  render();
+  let stop = false;
+  for (const t of targets) {
+    try {
+      const idx = resolve(t.name);
+      if (idx < 0) throw new Error("找不到這件造物（可能已被消耗）");
+      const card = await generateCardData(S.gameState.items[idx]);
+      const j = resolve(t.name); // re-resolve: items may have shifted during the await
+      if (j >= 0) {
+        const items = [...S.gameState.items];
+        items[j] = { ...items[j], card };
+        S.gameState.items = items;
+      }
+      S.cardBatch.done++;
+      if (S.cardBatch.done % 5 === 0) persistSave();
+    } catch (e) {
+      S.cardBatch.failed++;
+      S.cardBatch.error = (e && e.message) || String(e);
+      if (/429|quota|rate|RESOURCE_EXHAUSTED/i.test(S.cardBatch.error)) stop = true;
+    }
+    render();
+    if (stop) break;
+  }
+  S.cardBatch.running = false;
+  persistSave();
+  render();
+}
+
+function cardTileArt(it) {
+  return it.art
+    ? `<img class="card-tile-img" src="${esc(it.art)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" /><span class="card-tile-emoji" style="display:none">${esc(itemEmoji(it))}</span>`
+    : `<span class="card-tile-emoji">${esc(itemEmoji(it))}</span>`;
+}
+
+function renderCardTile(it, i) {
+  const c = it.card;
+  if (!c) {
+    const sel = S.cardsSelected[i] === it.name;
+    return `
+    <button class="card-tile pending ${sel ? "selected" : ""}" data-act="card-select" data-idx="${i}" title="${esc(it.name)}">
+      <span class="card-tile-check">${sel ? "☑" : "☐"}</span>
+      <span class="card-tile-art">${cardTileArt(it)}</span>
+      <span class="card-tile-name">${esc(it.name)}</span>
+      <span class="card-tile-meta">未卡片化</span>
+    </button>`;
+  }
+  const effect = cardKind(c) === "effect";
+  const attr = CARD_ATTRIBUTES[c.attribute] || CARD_ATTRIBUTES.entity;
+  const em = EFFECT_CARD_META[c.effectType] || EFFECT_CARD_META.heal;
+  return `
+  <button class="card-tile rarity-${esc(c.rarity || "R")} ${it.inDeck ? "in-deck" : ""}" data-act="card-open" data-idx="${i}" title="${esc(it.name)}">
+    <span class="card-tile-rarity">${esc(c.rarity || "R")}</span>
+    ${it.inDeck ? `<span class="card-tile-deck">牌組</span>` : ""}
+    <span class="card-tile-art">${cardTileArt(it)}</span>
+    <span class="card-tile-name">${esc(it.name)}</span>
+    <span class="card-tile-meta">${effect ? `${em.emoji} ${em.label}` : `${attr.emoji} HP ${c.hp}`}</span>
+  </button>`;
+}
+
 function renderCards() {
   const items = S.gameState.items || [];
   if (!items.length) {
     return `<div class="tab-cards"><div class="inv-empty">背包裡還沒有任何造物可以做成卡牌，先去煉製台做點東西吧。</div></div>`;
   }
+  const matches = cardsMatching();
+  const shown = matches.slice(0, S.cardsShown);
   const inDeck = deckCount();
   const hasCards = items.some((it) => it.card);
   const deckHasBattle = items.some((it) => it.card && it.inDeck && cardKind(it.card) === "battle");
-  const blocks = items.map((item, i) => {
-    if (item.card) {
-      return `
-      <div class="tcg-card-wrap tcg-card-col ${item.inDeck ? "in-deck" : ""}">
-        ${renderTcgCard(item)}
-        <button class="btn ${item.inDeck ? "primary" : "ghost"} small deck-toggle" data-act="deck-toggle" data-idx="${i}">
-          ${item.inDeck ? "✓ 已在牌組（點擊移出）" : "＋ 加入牌組"}
-        </button>
-      </div>`;
-    }
-    const busy = S.cardBusy === i;
-    const err = S.cardError && S.cardError.index === i ? S.cardError.text : null;
-    return `
-    <div class="tcg-pending">
-      <div class="tcg-pending-emoji">${esc(itemEmoji(item))}</div>
-      <div class="tcg-pending-info">
-        <div class="tcg-pending-name">${esc(item.name)}</div>
-        ${item.desc ? `<div class="tcg-pending-desc">${esc(item.desc)}</div>` : ""}
-      </div>
-      <button class="btn ghost small" data-act="cardify" data-idx="${i}" ${busy ? "disabled" : ""}>
-        ${busy ? "生成中…" : "🎴 卡片化"}
-      </button>
-      ${err ? `<div class="key-status bad" style="flex-basis:100%">${esc(err)}</div>` : ""}
+  const counts = { all: items.length, pending: items.filter((it) => !it.card).length, carded: items.filter((it) => it.card).length, deck: inDeck };
+  const pendingMatches = matches.filter(({ it }) => !it.card).length;
+  const selN = cardsSelectedValid().length;
+  const batch = S.cardBatch;
+
+  const chips = CARDS_FILTERS.map(([k, label]) =>
+    `<button class="cards-chip ${S.cardsFilter === k ? "active" : ""}" data-act="cards-filter" data-f="${k}">${label} ${counts[k]}</button>`).join("");
+
+  const tiles = shown.map(({ it, i }) => renderCardTile(it, i)).join("");
+  const more = matches.length > shown.length
+    ? `<button class="btn ghost small cards-more" id="cardsMoreBtn">顯示更多（還有 ${matches.length - shown.length} 張）</button>` : "";
+
+  let bar;
+  if (batch && batch.running) {
+    bar = `<div class="cards-progress">🎴 生成中 ${batch.done + batch.failed}/${batch.total}${batch.failed ? `（失敗 ${batch.failed}）` : ""}…請先不要離開這個頁面</div>`;
+  } else {
+    bar = `
+    ${batch ? `<div class="cards-progress ${batch.failed ? "warn" : ""}">完成 ${batch.done} 張${batch.failed ? `，失敗 ${batch.failed} 張（${esc(batch.error || "")}）` : ""}</div>` : ""}
+    ${S.cardError ? `<div class="cards-progress warn">${esc(S.cardError.text)}</div>` : ""}
+    <div class="cards-actions">
+      <button class="btn ghost small" id="cardsSelAllBtn" ${pendingMatches ? "" : "disabled"}>全選未卡片化（${pendingMatches}）</button>
+      <button class="btn ghost small" id="cardsSelNoneBtn" ${selN ? "" : "disabled"}>清除</button>
+      <button class="btn primary small" id="cardsDoBtn" ${selN ? "" : "disabled"}>🎴 卡片化已選（${selN}）</button>
     </div>`;
-  }).join("");
+  }
+
   return `
   <div class="tab-cards">
-    <div class="deck-bar">
-      <div class="deck-bar-count ${inDeck >= DECK_SIZE ? "full" : ""}">🃏 牌組 ${inDeck}/${DECK_SIZE}</div>
-      <div class="deck-bar-actions">
-        <button class="btn ghost small" id="deckAutoBtn" ${hasCards && inDeck < DECK_SIZE ? "" : "disabled"}>自動填滿</button>
-        <button class="btn ghost small" id="deckClearBtn" ${inDeck ? "" : "disabled"}>清空</button>
+    <div class="cards-toolbar">
+      <input class="tbsearch" id="cardsSearch" placeholder="🔍 搜尋名稱／屬性／技能／稀有度…" value="${esc(S.cardsQuery)}" />
+      <div class="cards-filters">${chips}</div>
+      <div class="deck-bar">
+        <div class="deck-bar-count ${inDeck >= DECK_SIZE ? "full" : ""}">🃏 牌組 ${inDeck}/${DECK_SIZE}</div>
+        <div class="deck-bar-actions">
+          <button class="btn ghost small" id="deckAutoBtn" ${hasCards && inDeck < DECK_SIZE ? "" : "disabled"}>自動填滿</button>
+          <button class="btn ghost small" id="deckClearBtn" ${inDeck ? "" : "disabled"}>清空</button>
+        </div>
       </div>
+      ${S.deckMsg ? `<div class="key-status bad">${esc(S.deckMsg)}</div>` : ""}
+      ${inDeck && !deckHasBattle ? `<div class="key-status bad">牌組裡沒有戰鬥卡——開戰時系統會自動補一張最新的戰鬥卡進去。</div>` : ""}
+      ${!inDeck && hasCards ? `<div class="map-hint">還沒選牌組：開戰時會自動帶最近卡片化的 ${DECK_SIZE} 張。點已卡片化的卡看大圖，在大圖裡加入牌組。</div>` : ""}
     </div>
-    ${S.deckMsg ? `<div class="key-status bad">${esc(S.deckMsg)}</div>` : ""}
-    ${inDeck && !deckHasBattle ? `<div class="key-status bad">牌組裡沒有戰鬥卡——開戰時系統會自動補一張最新的戰鬥卡進去。</div>` : ""}
-    ${!inDeck && hasCards ? `<div class="map-hint">還沒選牌組：開戰時會自動帶最近卡片化的 ${DECK_SIZE} 張。想自己挑，就在卡片下方按「加入牌組」。</div>` : ""}
-    <div class="map-hint" style="margin-bottom:6px">
-      點「卡片化」把造物變成對戰卡或效果卡（由AI判斷哪種比較適合）——稀有度用100面骰決定（70以下R卡、71~89 SR金框、90~99 SSR彩框、100 UR全圖卡），純外觀，不影響技能強度。
+    <div class="cards-scroll">
+      ${tiles ? `<div class="cards-grid">${tiles}</div>${more}` : `<div class="inv-empty">沒有符合的造物。</div>`}
     </div>
-    ${blocks}
+    <div class="cards-actionbar">${bar}</div>
+  </div>`;
+}
+
+function renderCardDetailModal() {
+  const it = (S.gameState.items || [])[S.cardDetail];
+  if (!it || !it.card) return "";
+  return `
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal" id="modalBox">
+      <div class="modal-head"><span>🃏 ${esc(it.name)}</span><button class="modal-close" id="modalCloseBtn">✕</button></div>
+      <div class="tcg-card-wrap">${renderTcgCard(it)}</div>
+      <div class="save-actions" style="margin-top:12px;justify-content:center">
+        <button class="btn ${it.inDeck ? "primary" : "ghost"} small" data-act="deck-toggle" data-idx="${S.cardDetail}">
+          ${it.inDeck ? "✓ 已在牌組（點擊移出）" : "＋ 加入牌組"}
+        </button>
+      </div>
+      ${S.deckMsg ? `<div class="key-status bad" style="text-align:center">${esc(S.deckMsg)}</div>` : ""}
+      <div class="modal-hint" style="text-align:center;margin-top:8px">稀有度由 100 面骰決定（70 以下 R、71~89 SR 金框、90~99 SSR 彩框、100 UR 全圖卡），純外觀，不影響技能強度。</div>
+    </div>
   </div>`;
 }
 
@@ -2781,6 +3027,7 @@ function renderModal() {
   if (S.modal === "share") { root.innerHTML = renderShareModal(); return; }
   if (S.modal === "ia") { root.innerHTML = renderIaModal(); return; }
   if (S.modal === "battle" && S.battle) { root.innerHTML = renderBattleModal(); return; }
+  if (S.modal === "carddetail") { root.innerHTML = renderCardDetailModal(); return; }
   if (S.modal !== "settings") { root.innerHTML = ""; return; }
   const key = getApiKey();
   const masked = key ? key.slice(0, 4) + "••••••••" + key.slice(-4) : "";
@@ -2911,12 +3158,11 @@ function renderInfiniteAlchemySection() {
     : "";
 
   const query = S.iaQuery.trim().toLowerCase();
-  const filtered = query
-    ? S.iaInventions.filter((it) => (it.name || "").toLowerCase().includes(query))
-    : [];
+  const filtered = iaFilteredInventions();
+  const shown = filtered.slice(0, S.iaShown || IA_PAGE_SIZE);
   const selectedCount = Object.values(S.iaSelected).filter(Boolean).length;
 
-  const invRows = filtered.map((it) => `
+  const invRows = shown.map((it) => `
     <label class="ia-item-row">
       <input type="checkbox" data-act="ia-toggle" data-id="${esc(it.id)}" ${S.iaSelected[it.id] ? "checked" : ""} />
       ${it.manifestationUrl && String(it.manifestationUrl).startsWith("https:")
@@ -2924,15 +3170,35 @@ function renderInfiniteAlchemySection() {
         : `<span class="ia-item-emoji">${esc(it.emoji || "📦")}</span>`}
       <span class="ia-item-name">${esc(it.name)}</span>
     </label>`).join("");
+  const moreBtn = filtered.length > shown.length
+    ? `<button class="btn ghost small" id="iaMoreBtn" style="margin-top:6px">顯示更多（還有 ${filtered.length - shown.length} 件）</button>` : "";
+
+  const info = S.iaFetchInfo;
+  const endedText = !info ? "" : ({
+    "server-end": "伺服器回報已經讀到最後一筆",
+    "empty-page": "伺服器回傳了空白頁，視為讀完",
+    "stalled": "伺服器的分頁位置沒有前進，已停止",
+    "page-cap": "已達安全頁數上限，可能還有更多",
+  }[info.endedBy] || "");
+  const infoLine = info
+    ? `<div class="modal-hint" style="margin-top:4px">共讀取 ${info.count} 件（${info.pages} 頁，每頁最多 100）。${endedText}。</div>` : "";
 
   let listBlock;
-  if (!S.iaInventions.length) {
-    listBlock = `<div class="inv-empty">${S.iaBusy ? "讀取中…" : "這個帳號目前沒有造物，或還沒讀取。"}</div>`;
+  if (S.iaBusy) {
+    listBlock = `<div class="inv-empty">讀取中…已讀取 ${S.iaProgress || 0} 件</div>`;
+  } else if (!S.iaInventions.length) {
+    listBlock = `<div class="inv-empty">這個帳號目前沒有造物，或還沒讀取。</div>`;
   } else if (!query) {
     listBlock = `<div class="inv-empty">你在 Infinite Alchemy 裡有 ${S.iaInventions.length} 件造物——輸入關鍵字搜尋，找到想匯入的再勾選。</div>`;
   } else {
-    listBlock = invRows || `<div class="inv-empty">沒有造物名稱符合「${esc(S.iaQuery)}」。</div>`;
+    listBlock = (invRows + moreBtn) || `<div class="inv-empty">沒有造物名稱符合「${esc(S.iaQuery)}」。</div>`;
   }
+
+  const bulk = query && filtered.length
+    ? `<div class="save-actions" style="margin-bottom:6px">
+        <button class="btn ghost small" id="iaSelAllBtn">全選符合搜尋的 ${filtered.length} 件</button>
+        <button class="btn ghost small" id="iaSelNoneBtn">取消這些</button>
+      </div>` : "";
 
   return `
   <div class="modal-section">
@@ -2940,9 +3206,11 @@ function renderInfiniteAlchemySection() {
     ${profileLine}
     <div class="modal-hint">搜尋你自己擁有的造物，勾選想要的再匯入，不會一次整批帶進來。已經存在同名造物的不會重複匯入。</div>
     <input class="tbsearch" id="iaSearchInput" style="margin-bottom:8px" placeholder="🔍 搜尋你擁有的造物..." value="${esc(S.iaQuery)}" />
+    ${bulk}
     <div class="ia-item-grid">
       ${listBlock}
     </div>
+    ${infoLine}
     <div class="save-actions" style="margin-top:10px">
       <button class="btn ghost small" id="iaRefreshBtn" ${S.iaBusy ? "disabled" : ""}>${S.iaBusy ? "讀取中…" : "🔄 重新整理清單"}</button>
       <button class="btn primary small" id="iaImportBtn" ${S.iaBusy || !selectedCount ? "disabled" : ""}>⬇️ 匯入已勾選造物（${selectedCount}）</button>
@@ -3071,9 +3339,33 @@ function bindEvents() {
   });
 
   // cards
-  document.querySelectorAll('[data-act="cardify"]').forEach((btn) => {
-    btn.onclick = () => cardifyItem(parseInt(btn.dataset.idx, 10));
+  document.querySelectorAll('[data-act="card-select"]').forEach((btn) => {
+    btn.onclick = () => toggleCardSelect(parseInt(btn.dataset.idx, 10));
   });
+  document.querySelectorAll('[data-act="card-open"]').forEach((btn) => {
+    btn.onclick = () => openCardDetail(parseInt(btn.dataset.idx, 10));
+  });
+  document.querySelectorAll('[data-act="cards-filter"]').forEach((btn) => {
+    btn.onclick = () => { S.cardsFilter = btn.dataset.f; resetCardsScroll(); render(); };
+  });
+  const cardsSearch = document.getElementById("cardsSearch");
+  if (cardsSearch) {
+    cardsSearch.oninput = (e) => { S.cardsQuery = e.target.value; resetCardsScroll(); render(); };
+    cardsSearch.onfocus = () => { S.cardsSearchFocused = true; };
+    cardsSearch.onblur = () => { S.cardsSearchFocused = false; };
+    if (S.cardsSearchFocused) {
+      cardsSearch.focus();
+      cardsSearch.setSelectionRange(cardsSearch.value.length, cardsSearch.value.length);
+    }
+  }
+  const cardsMoreBtn = document.getElementById("cardsMoreBtn");
+  if (cardsMoreBtn) cardsMoreBtn.onclick = () => { S.cardsShown += CARDS_PAGE_SIZE; render(); };
+  const cardsSelAllBtn = document.getElementById("cardsSelAllBtn");
+  if (cardsSelAllBtn) cardsSelAllBtn.onclick = () => selectAllPendingMatches();
+  const cardsSelNoneBtn = document.getElementById("cardsSelNoneBtn");
+  if (cardsSelNoneBtn) cardsSelNoneBtn.onclick = () => { S.cardsSelected = {}; render(); };
+  const cardsDoBtn = document.getElementById("cardsDoBtn");
+  if (cardsDoBtn) cardsDoBtn.onclick = () => cardifySelected();
   document.querySelectorAll('[data-act="deck-toggle"]').forEach((btn) => {
     btn.onclick = () => toggleDeckMembership(parseInt(btn.dataset.idx, 10));
   });
@@ -3206,7 +3498,7 @@ function bindModalEvents() {
   });
   const iaSearchInput = document.getElementById("iaSearchInput");
   if (iaSearchInput) {
-    iaSearchInput.oninput = (e) => { S.iaQuery = e.target.value; render(); };
+    iaSearchInput.oninput = (e) => { S.iaQuery = e.target.value; S.iaShown = IA_PAGE_SIZE; render(); };
     iaSearchInput.onfocus = () => { S.iaSearchFocused = true; };
     iaSearchInput.onblur = () => { S.iaSearchFocused = false; };
     if (S.iaSearchFocused) {
@@ -3214,6 +3506,12 @@ function bindModalEvents() {
       iaSearchInput.setSelectionRange(iaSearchInput.value.length, iaSearchInput.value.length);
     }
   }
+  const iaSelAllBtn = document.getElementById("iaSelAllBtn");
+  if (iaSelAllBtn) iaSelAllBtn.onclick = () => iaSelectFiltered(true);
+  const iaSelNoneBtn = document.getElementById("iaSelNoneBtn");
+  if (iaSelNoneBtn) iaSelNoneBtn.onclick = () => iaSelectFiltered(false);
+  const iaMoreBtn = document.getElementById("iaMoreBtn");
+  if (iaMoreBtn) iaMoreBtn.onclick = () => { S.iaShown = (S.iaShown || IA_PAGE_SIZE) + IA_PAGE_SIZE; render(); };
   const iaUpdateRedirectBtn = document.getElementById("iaUpdateRedirectBtn");
   if (iaUpdateRedirectBtn) iaUpdateRedirectBtn.onclick = () => iaUpdateRedirectUri();
 
